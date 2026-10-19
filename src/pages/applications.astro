@@ -1,0 +1,30 @@
+---
+import Base from '../layouts/Base.astro';
+import Nav from '../components/Nav.astro';
+import PageHeader from '../components/PageHeader.astro';
+import Applications from '../components/Applications.astro';
+import CtaBand from '../components/CtaBand.astro';
+import Footer from '../components/Footer.astro';
+import { SITE } from '../config/site';
+---
+<Base
+  title={`Selected applications | ${SITE.name}`}
+  description="Five illustrative problem domains where satellite data, GIS and GeoAI combine to inform decisions: flood and water, agriculture, urban planning, infrastructure resilience, and defence and security geospatial intelligence."
+>
+  <Nav />
+  <main id="main">
+    <PageHeader
+      eyebrow="Applications"
+      title="Selected applications"
+      lede="Where and why the technical services are used: five problem domains, each combining several services to produce outputs that could inform a decision."
+    />
+    <Applications />
+    <CtaBand
+      heading="See something close to your question?"
+      text="Describe your area, data and decision, and we will suggest a practical starting point."
+      primary={{ label: 'Discuss a Project', href: '/contact/' }}
+      secondary={{ label: 'View services', href: '/services/' }}
+    />
+  </main>
+  <Footer />
+</Base>

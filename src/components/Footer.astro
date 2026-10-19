@@ -1,0 +1,79 @@
+---
+import { SITE, NAV } from '../config/site';
+
+const owner = SITE.legalName || SITE.name;
+const mailto = `mailto:${SITE.email}`;
+---
+<footer class="footer">
+  <div class="container">
+    <div class="top">
+      <div class="brand">
+        <a class="wordmark" href="/" aria-label={`${SITE.name}, home`}>{SITE.name}</a>
+        <p class="blurb">Remote sensing, GIS and GeoAI consultancy.</p>
+        {SITE.legalName && <p class="mono legal">{SITE.legalName}</p>}
+      </div>
+
+      <nav class="col" aria-label="Footer">
+        <p class="mono col-title">Pages</p>
+        <ul>
+          {NAV.map((l) => <li><a href={l.href}>{l.label}</a></li>)}
+        </ul>
+      </nav>
+
+      <div class="col">
+        <p class="mono col-title">Contact</p>
+        <ul>
+          <li><a href={mailto}>{SITE.email}</a></li>
+          {SITE.social.map((s) => (
+            <li><a href={s.href} rel="noopener noreferrer" target="_blank">{s.label}</a></li>
+          ))}
+        </ul>
+      </div>
+    </div>
+
+    <div class="bottom">
+      <p class="mono">&copy; {SITE.year} {owner}</p>
+      <p class="mono">Illustrative graphics generated for this site.</p>
+      <a class="mono totop" href="#main">Back to top <span aria-hidden="true">&uarr;</span></a>
+    </div>
+  </div>
+</footer>
+
+<style>
+  .footer { border-top: 1px solid var(--line); background: var(--bg-raised); padding-block: 3.5rem 2rem; }
+  .top { display: grid; gap: 2.5rem; }
+  .wordmark {
+    display: inline-flex; align-items: center; min-height: 44px;
+    font-family: var(--font-display); font-weight: 600; font-size: 1.35rem;
+    letter-spacing: -0.02em; text-decoration: none; color: var(--text);
+  }
+  .wordmark:hover { color: var(--lime); }
+  .blurb { color: var(--text-muted); max-width: 32ch; margin-top: 0.25rem; }
+  .legal { margin-top: 0.75rem; }
+  .col-title { margin-bottom: 0.5rem; }
+  .col a {
+    display: inline-flex; align-items: center; min-height: 44px; color: var(--text);
+    text-decoration: none; overflow-wrap: anywhere; transition: color 0.2s;
+  }
+  .col a:hover { color: var(--lime); }
+  .bottom {
+    margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.5rem;
+  }
+  .bottom p { margin: 0; text-transform: none; }
+  .totop {
+    display: inline-flex; align-items: center; min-height: 44px; padding-inline: 0.25rem; margin-inline-start: -0.25rem;
+    text-decoration: none; color: var(--text);
+  }
+  .totop:hover { color: var(--lime); }
+
+  @media (min-width: 640px) {
+    .top { grid-template-columns: 1fr 1fr; }
+    .brand { grid-column: 1 / -1; }
+  }
+  @media (min-width: 960px) {
+    .top { grid-template-columns: 2fr 1fr 1.5fr; }
+    .brand { grid-column: auto; }
+    .totop { margin-inline-start: auto; }
+  }
+</style>

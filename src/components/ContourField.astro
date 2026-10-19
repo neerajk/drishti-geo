@@ -1,0 +1,146 @@
+---
+// Build-time topographic contour field. Everything below runs once during `astro build`;
+// the page ships static SVG + CSS only (no client JS). Fixed seed => identical output each build.
+import { createNoise2D } from 'simplex-noise';
+import { contours } from 'd3-contour';
+
+// Small seeded PRNG (mulberry32) so simplex-noise is deterministic.
+function mulberry32(seed: number) {
+  return () => {
+    seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const VB_W = 1600;
+const VB_H = 900;
+const COLS = 72;
+const ROWS = Math.round((COLS * VB_H) / VB_W); // 41
+const noise = createNoise2D(mulberry32(20260));
+
+// Fractal noise (4 octaves) sampled on the grid, roughly in [-1, 1].
+const values = new Float64Array(COLS * ROWS);
+for (let y = 0; y < ROWS; y++) {
+  for (let x = 0; x < COLS; x++) {
+    let amp = 1, freq = 0.044, sum = 0, norm = 0;
+    for (let o = 0; o < 4; o++) {
+      sum += amp * noise(x * freq + 11.3, y * freq * 1.15 + 4.7);
+      norm += amp; amp *= 0.5; freq *= 2.05;
+    }
+    values[y * COLS + x] = sum / norm;
+  }
+}
+
+const LEVELS = 13;
+const MIN = -0.55, MAX = 0.6;
+const thresholds = Array.from({ length: LEVELS }, (_, i) => MIN + ((MAX - MIN) * i) / (LEVELS - 1));
+const generated = contours().size([COLS, ROWS]).thresholds(thresholds)(Array.from(values));
+
+const sx = VB_W / (COLS - 1);
+const sy = VB_H / (ROWS - 1);
+// d3-contour coordinates are in cell centres (+0.5), so shift back before scaling.
+const fmt = (n: number) => String(Math.round(n)); // integers keep the SVG small (~45 KB)
+function toPath(multi: { coordinates: number[][][][] }): string {
+  let d = '';
+  for (const polygon of multi.coordinates) {
+    for (const ring of polygon) {
+      ring.forEach(([x, y], i) => {
+        d += (i === 0 ? 'M' : 'L') + fmt((x - 0.5) * sx) + ' ' + fmt((y - 0.5) * sy);
+      });
+      d += 'Z';
+    }
+  }
+  return d;
+}
+
+const levels = generated
+  .map((c, i) => ({ d: toPath(c), index: i % 4 === 2 }))
+  .filter((l) => l.d.length > 0);
+
+// Graticule: straight lines every 200 x 150 units plus small "+" marks at intersections.
+let grid = '';
+for (let x = 200; x < VB_W; x += 200) grid += `M${x} 0V${VB_H}`;
+for (let y = 150; y < VB_H; y += 150) grid += `M0 ${y}H${VB_W}`;
+let crosses = '';
+for (let x = 200; x < VB_W; x += 200) for (let y = 150; y < VB_H; y += 150) crosses += `M${x - 6} ${y}h12M${x} ${y - 6}v12`;
+
+// Decorative coordinate ticks (generic scene-frame labels, not tied to a real location).
+const lonTicks = [12.5, 25, 37.5, 50, 62.5, 75, 87.5].map((p, i) => ({ p, t: `E ${String(4 + i * 0.5).padStart(3, '0')}°` }));
+const latTicks = [16.67, 33.33, 50, 66.67, 83.33].map((p, i) => ({ p, t: `N ${52.5 - i * 0.25}°` }));
+---
+<div class="field" aria-hidden="true">
+  <svg
+    class="map"
+    viewBox={`0 0 ${VB_W} ${VB_H}`}
+    preserveAspectRatio="xMidYMid slice"
+    focusable="false"
+  >
+    <path class="grat" d={grid} />
+    <path class="grat cross" d={crosses} />
+    {levels.map((l) => <path class={l.index ? 'c idx' : 'c'} d={l.d} />)}
+  </svg>
+
+  <div class="scan"></div>
+
+  <ul class="ticks ticks-x">
+    {lonTicks.map((t) => <li class="mono" style={`left:${t.p}%`}>{t.t}</li>)}
+  </ul>
+  <ul class="ticks ticks-y">
+    {latTicks.map((t) => <li class="mono" style={`top:${t.p}%`}>{t.t}</li>)}
+  </ul>
+
+  <span class="crop tl"></span><span class="crop tr"></span>
+  <span class="crop bl"></span><span class="crop br"></span>
+</div>
+
+<style>
+  .field { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+  .map { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; }
+  .map path { fill: none; vector-effect: non-scaling-stroke; }
+  .c { stroke: #7f95ad; stroke-width: 1; stroke-opacity: 0.22; stroke-linejoin: round; }
+  .idx { stroke: var(--lime); stroke-width: 1.25; stroke-opacity: 0.4; }
+  .grat { stroke: #5d7288; stroke-width: 1; stroke-opacity: 0.16; stroke-dasharray: 2 6; }
+  .grat.cross { stroke-dasharray: none; stroke-opacity: 0.35; }
+
+  /* Slow lime sweep: a tall box whose bottom edge is the line, moved with transform only. */
+  .scan {
+    position: absolute; left: 0; right: 0; top: -100%; height: 100%;
+    background: linear-gradient(to bottom, transparent 0%, rgba(197, 242, 58, 0.035) 85%, rgba(197, 242, 58, 0.32) 100%);
+    border-bottom: 1px solid rgba(197, 242, 58, 0.45);
+    will-change: transform;
+    animation: sweep 18s linear infinite;
+  }
+  @keyframes sweep { from { transform: translateY(0); } to { transform: translateY(200%); } }
+
+  .ticks { position: absolute; margin: 0; padding: 0; list-style: none; }
+  .ticks li { position: absolute; font-size: 0.625rem; color: var(--text-muted); opacity: 0.6; white-space: nowrap; letter-spacing: 0.06em; }
+  .ticks-x { top: 5.25rem; left: 0; right: 0; }
+  .ticks-x li { transform: translateX(-50%); }
+  .ticks-y { left: 0.75rem; top: 0; bottom: 0; }
+  .ticks-y li { transform: translateY(-50%); }
+  .ticks-x li:nth-child(even), .ticks-y li:nth-child(even) { display: none; }
+
+  .crop { position: absolute; width: 28px; height: 28px; border: 0 solid rgba(197, 242, 58, 0.55); }
+  .tl { top: 5rem; left: 0.75rem; border-top-width: 1px; border-left-width: 1px; }
+  .tr { top: 5rem; right: 0.75rem; border-top-width: 1px; border-right-width: 1px; }
+  .bl { bottom: 0.75rem; left: 0.75rem; border-bottom-width: 1px; border-left-width: 1px; }
+  .br { bottom: 0.75rem; right: 0.75rem; border-bottom-width: 1px; border-right-width: 1px; }
+
+  @media (min-width: 640px) {
+    .ticks-x li:nth-child(even), .ticks-y li:nth-child(even) { display: block; }
+    .ticks-x li:nth-child(1), .ticks-x li:nth-child(7) { display: none; }
+    .crop { width: 40px; height: 40px; }
+    .tl, .tr { top: 5.5rem; }
+    .ticks-x { top: 5.75rem; }
+    .tl, .bl { left: 1.25rem; }
+    .tr, .br { right: 1.25rem; }
+    .bl, .br { bottom: 1.25rem; }
+    .ticks-y { left: 1.5rem; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scan { animation: none; transform: translateY(120%); opacity: 0.6; }
+  }
+</style>

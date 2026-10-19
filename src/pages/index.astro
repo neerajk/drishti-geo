@@ -1,0 +1,22 @@
+---
+import Base from '../layouts/Base.astro';
+import Nav from '../components/Nav.astro';
+import Hero from '../components/Hero.astro';
+import HomeOverview from '../components/HomeOverview.astro';
+import CtaBand from '../components/CtaBand.astro';
+import Footer from '../components/Footer.astro';
+---
+<Base>
+  <Nav />
+  <main id="main">
+    <Hero />
+    <HomeOverview />
+    <CtaBand
+      heading="Have a geospatial question to answer?"
+      text="Tell us about the area, the decision and the data you have. We will reply with how we would approach it."
+      primary={{ label: 'Discuss a Project', href: '/contact/' }}
+      secondary={{ label: 'Explore Services', href: '/services/' }}
+    />
+  </main>
+  <Footer />
+</Base>

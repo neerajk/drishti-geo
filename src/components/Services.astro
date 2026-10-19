@@ -1,0 +1,44 @@
+---
+import { SERVICES, SERVICES_NOTE } from '../content/services';
+import ServiceCard from './ServiceCard.astro';
+const noteAt = SERVICES_NOTE.indexOf('Applications');
+const noteBefore = noteAt < 0 ? SERVICES_NOTE : SERVICES_NOTE.slice(0, noteAt);
+const noteAfter = noteAt < 0 ? '' : SERVICES_NOTE.slice(noteAt + 'Applications'.length);
+---
+<section class="section" aria-labelledby="services-heading">
+  <div class="container">
+    <header class="head" data-reveal>
+      <span class="eyebrow">Technical capabilities</span>
+      <h2 id="services-heading">What we can do with spatial data</h2>
+      <p class="lede">
+        Six technical capabilities that can run on their own or combine in one project. Each card lists the kind of work involved and the outputs it typically produces.
+      </p>
+      <p class="note">
+        {noteBefore}{noteAt >= 0 && <a href="/applications/">Applications</a>}{noteAfter}
+      </p>
+    </header>
+    <div class="grid">
+      {SERVICES.map((service, i) => (
+        <ServiceCard service={service} index={i} />
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .head { margin-bottom: clamp(2.25rem, 5vw, 3.5rem); }
+  .note { max-width: 62ch; text-wrap: pretty; margin-top: 1rem; font-size: var(--fs-small); line-height: 1.6; color: var(--text-muted); }
+  .note a { color: var(--text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--lime-dim); }
+  .note a:hover { color: var(--lime); }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+  @media (min-width: 640px) {
+    .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; }
+  }
+  @media (min-width: 960px) {
+    .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+</style>

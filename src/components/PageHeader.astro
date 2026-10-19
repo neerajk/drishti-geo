@@ -1,0 +1,32 @@
+---
+// Shared header for inner pages. Holds the page's single <h1>.
+interface Props { eyebrow: string; title: string; lede?: string }
+const { eyebrow, title, lede } = Astro.props;
+---
+<header class="page-header">
+  <div class="container">
+    <p class="eyebrow">{eyebrow}</p>
+    <h1 id="page-heading">{title}</h1>
+    {lede && <p class="lede">{lede}</p>}
+  </div>
+</header>
+
+<style>
+  .page-header {
+    padding-block: clamp(7rem, 14vw, 10rem) clamp(2.5rem, 5vw, 4rem);
+    border-bottom: 1px solid var(--line);
+    background:
+      linear-gradient(var(--line) 1px, transparent 1px) 0 0 / 100% 56px,
+      linear-gradient(90deg, var(--line) 1px, transparent 1px) 0 0 / 56px 100%,
+      var(--bg);
+    background-blend-mode: soft-light, soft-light, normal;
+    position: relative;
+  }
+  .page-header::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(180deg, transparent 40%, var(--bg) 100%);
+  }
+  .page-header .container { position: relative; z-index: 1; }
+  h1 { font-size: var(--fs-hero); font-size: clamp(2.2rem, 5vw + 0.5rem, 4rem); max-width: 18ch; }
+  .lede { max-width: 62ch; }
+</style>

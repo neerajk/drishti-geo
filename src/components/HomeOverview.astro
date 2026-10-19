@@ -1,0 +1,136 @@
+---
+// Compact landing-page overview: services, applications and approach teasers.
+// Reads from the content files; the full detail lives on the inner pages.
+import { SERVICES } from '../content/services';
+import { APPLICATIONS } from '../content/applications';
+import { DELIVERABLES } from '../content/deliverables';
+---
+<section class="section" aria-labelledby="home-services-heading">
+  <div class="container">
+    <header class="head" data-reveal>
+      <span class="eyebrow">Services</span>
+      <h2 id="home-services-heading">Six technical capabilities</h2>
+      <p class="lede">
+        The methods we apply, from satellite processing to map-based tools.
+        <a class="more" href="/services/">See all services <span aria-hidden="true">&rarr;</span></a>
+      </p>
+    </header>
+    <ul class="svc-grid" role="list">
+      {SERVICES.map((s) => (
+        <li data-reveal>
+          <a class="svc" href={`/services/#${s.id}`}>
+            <span class="mono svc-num">{s.number}</span>
+            <span class="svc-title">{s.title}</span>
+            <span class="mono svc-meta">{s.meta}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  </div>
+</section>
+
+<section class="section apps" aria-labelledby="home-apps-heading">
+  <div class="container apps-inner" data-reveal>
+    <div>
+      <span class="eyebrow">Applications</span>
+      <h2 id="home-apps-heading">Five problem domains</h2>
+      <p class="lede">
+        Applications are the questions these methods help answer, usually by combining several services. They are illustrative, not case studies.
+        <a class="more" href="/applications/">View applications <span aria-hidden="true">&rarr;</span></a>
+      </p>
+    </div>
+    <ul class="app-list" role="list">
+      {APPLICATIONS.map((a) => (
+        <li>
+          <a class="app" href={`/applications/#${a.id}`}>
+            <span>{a.title}</span>
+            <span aria-hidden="true">&rarr;</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  </div>
+</section>
+
+<section class="section deliv" aria-labelledby="home-deliv-heading">
+  <div class="container deliv-inner" data-reveal>
+    <div>
+      <span class="eyebrow">Deliverables</span>
+      <h2 id="home-deliv-heading">What you receive</h2>
+      <p class="lede">
+        Four kinds of output, whichever question is being answered.
+        <a class="more" href="/services/#deliverables">See deliverables <span aria-hidden="true">&rarr;</span></a>
+      </p>
+    </div>
+    <ul class="app-list" role="list">
+      {DELIVERABLES.map((d) => (
+        <li>
+          <a class="app" href="/services/#deliverables">
+            <span>{d.title}</span>
+            <span aria-hidden="true">&rarr;</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  </div>
+</section>
+
+<section class="section approach" aria-labelledby="home-approach-heading">
+  <div class="container approach-inner" data-reveal>
+    <h2 id="home-approach-heading">Evidence first, limits stated plainly</h2>
+    <div>
+      <p class="lede">
+        How we work, from framing the question to delivering documented results.
+        <a class="more" href="/about/">About us <span aria-hidden="true">&rarr;</span></a>
+      </p>
+    </div>
+  </div>
+</section>
+
+<style>
+  .head { margin-bottom: clamp(2rem, 5vw, 3rem); }
+  .more {
+    display: inline-flex; align-items: center; gap: 0.4rem; min-height: 44px;
+    color: var(--lime); font-family: var(--font-display);
+    font-weight: 600; text-decoration: none; white-space: nowrap;
+  }
+  .more:hover { text-decoration: underline; text-underline-offset: 4px; }
+
+  .svc-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .svc-grid li { display: flex; background: var(--bg-card); }
+  .svc {
+    display: flex; flex-direction: column; gap: 0.5rem; width: 100%; min-height: 44px;
+    padding: clamp(1.25rem, 3vw, 1.75rem); text-decoration: none;
+    transition: background 0.2s var(--ease);
+  }
+  .svc:hover { background: var(--bg-raised); }
+  .svc:hover .svc-title { color: var(--lime); }
+  .svc-num { color: var(--teal); }
+  .svc-title { font-family: var(--font-display); font-weight: 600; font-size: var(--fs-h3); line-height: 1.2; letter-spacing: -0.01em; transition: color 0.2s; }
+  .svc-meta { color: var(--text-muted); }
+
+  .apps { background: var(--bg-raised); border-block: 1px solid var(--line); }
+  .apps-inner, .deliv-inner, .approach-inner { display: grid; gap: 2rem; align-items: center; }
+  .app-list { display: grid; gap: 0.6rem; }
+  .app {
+    display: flex; justify-content: space-between; align-items: center; gap: 1rem; min-height: 48px;
+    padding: 0.75rem 1.1rem; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--bg-card); text-decoration: none; font-family: var(--font-display); font-weight: 600;
+    transition: border-color 0.2s var(--ease), color 0.2s;
+  }
+  .app:hover { border-color: var(--lime); color: var(--lime); }
+  .approach .lede { margin-top: 0; }
+
+  @media (min-width: 640px) {
+    .svc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    /* An odd last tile spans the remaining columns so no empty cell shows the divider colour. */
+    .svc-grid li:last-child:nth-child(odd) { grid-column: span 2; }
+  }
+  @media (min-width: 960px) {
+    .svc-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .apps-inner, .deliv-inner, .approach-inner { grid-template-columns: 1fr 1fr; gap: 4rem; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .svc, .app { transition: none; }
+  }
+</style>

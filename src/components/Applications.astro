@@ -1,0 +1,230 @@
+---
+import Visual from './Visual.astro';
+import { APPLICATIONS, APPLICATIONS_NOTE } from '../content/applications';
+import { SERVICES } from '../content/services';
+
+// Resolve each application's service ids to real services; an unknown id fails the build.
+const serviceById = new Map(SERVICES.map((s) => [s.id, s]));
+const apps = APPLICATIONS.map((a) => ({
+  ...a,
+  linked: a.services.map((id) => {
+    const svc = serviceById.get(id);
+    if (!svc) throw new Error(`Application "${a.id}" references unknown service id "${id}"`);
+    return svc;
+  }),
+}));
+---
+<section class="section" aria-labelledby="applications-heading">
+  <div class="container">
+    <header class="apps-head" data-reveal>
+      <div>
+        <span class="eyebrow">Five problem domains</span>
+        <h2 id="applications-heading">One question, several services</h2>
+        <p class="lede">
+          Each application starts with a practical question and combines the services that can answer it. The same service appears in more than one application, and one application rarely needs only one.
+        </p>
+      </div>
+      <p class="apps-note" role="note">
+        <span class="mono apps-note-label">Note</span>
+        {APPLICATIONS_NOTE}
+      </p>
+    </header>
+
+    <ul class="apps-grid" role="list">
+      {apps.map((a) => (
+        <li id={a.id} class="app-item" data-reveal>
+          <article class="app-card" aria-labelledby={`app-${a.id}-title`}>
+            <div class="app-visual">
+              <Visual kind={a.visual} />
+            </div>
+            <div class="app-body">
+              <div class="app-top">
+                <span class="mono app-meta">{a.meta}</span>
+                {a.illustrative && <span class="badge">Illustrative example</span>}
+              </div>
+              <h3 id={`app-${a.id}-title`}>{a.title}</h3>
+              <p class="app-summary">{a.summary}</p>
+
+              <div class="app-cols">
+                <div class="app-block app-question">
+                  <h4 class="mono app-label">The question</h4>
+                  <p>{a.question}</p>
+                </div>
+                <div class="app-block">
+                  <h4 class="mono app-label" id={`app-${a.id}-out`}>Outputs that could inform a decision</h4>
+                  <ul class="app-points" role="list" aria-labelledby={`app-${a.id}-out`}>
+                    {a.outputs.map((o) => <li>{o}</li>)}
+                  </ul>
+                </div>
+              </div>
+
+              <div class="app-block app-approach">
+                <h4 class="mono app-label">How it could be approached</h4>
+                <p>{a.approach}</p>
+              </div>
+
+              <div class="app-block">
+                <h4 class="mono app-label" id={`app-${a.id}-svc`}>Services combined</h4>
+                <ul class="app-chips" role="list" aria-labelledby={`app-${a.id}-svc`}>
+                  {a.linked.map((svc) => (
+                    <li><a class="chip" href={`/services/#${svc.id}`}>{svc.title}</a></li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </article>
+        </li>
+      ))}
+    </ul>
+  </div>
+</section>
+
+<style>
+  .apps-head {
+    display: grid;
+    gap: 2rem;
+    align-items: end;
+    margin-bottom: clamp(2rem, 5vw, 3.5rem);
+  }
+  .apps-note {
+    border: 1px solid var(--line-strong);
+    border-left: 3px solid var(--teal);
+    border-radius: 10px;
+    background: var(--bg-raised);
+    padding: 1rem 1.15rem;
+    font-size: var(--fs-small);
+    line-height: 1.55;
+    color: var(--text-muted);
+    max-width: 52ch;
+  }
+  .apps-note-label {
+    display: block;
+    color: var(--teal);
+    margin-bottom: 0.35rem;
+  }
+
+  .apps-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.25rem;
+  }
+  .app-item { display: flex; min-width: 0; }
+
+  .app-card {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: border-color 0.25s var(--ease), transform 0.25s var(--ease);
+  }
+  .app-card:hover { border-color: var(--line-strong); transform: translateY(-3px); }
+
+  /* Mobile: 16:9 banner above the text. From 720px the tile stretches to the card height and the SVG crops to fill it. */
+  .app-visual {
+    background: var(--bg-raised);
+    border-bottom: 1px solid var(--line);
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+  }
+  .app-visual :global(svg) { display: block; width: 100%; height: 100%; }
+
+  .app-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    flex: 1;
+    min-width: 0;
+    padding: clamp(1.25rem, 3vw, 1.75rem);
+  }
+  .app-top { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+  .app-meta { color: var(--text-muted); }
+  .badge {
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--lime);
+    border: 1px solid color-mix(in srgb, var(--lime) 45%, transparent);
+    background: color-mix(in srgb, var(--lime) 8%, transparent);
+    border-radius: 999px;
+    padding: 0.2rem 0.65rem;
+    white-space: nowrap;
+  }
+  .app-summary { color: var(--text-muted); font-size: 0.975rem; }
+
+  .app-cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.25rem; }
+  .app-block { min-width: 0; }
+  .app-label { color: var(--teal); margin-bottom: 0.5rem; font-weight: 500; }
+  .app-question p, .app-approach p { color: var(--text); font-size: 1rem; line-height: 1.5; }
+
+  .app-points { display: grid; gap: 0.5rem; color: var(--text); font-size: 0.95rem; }
+  .app-points li { position: relative; padding-left: 1.2rem; }
+  .app-points li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.7em;
+    width: 0.5rem;
+    height: 1px;
+    background: var(--teal);
+  }
+
+  .app-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0.35rem 0.9rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    background: var(--bg-raised);
+    color: var(--lime);
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 0.875rem;
+    line-height: 1.25;
+    text-decoration: none;
+    transition: border-color 0.2s var(--ease), background-color 0.2s var(--ease);
+  }
+  .chip:hover {
+    border-color: var(--lime);
+    background: color-mix(in srgb, var(--lime) 8%, var(--bg-raised));
+  }
+
+  /* Tablet and desktop: five editorial rows, tile left, text right. No empty grid cells. */
+  @media (min-width: 720px) {
+    .apps-grid { gap: 1.5rem; }
+    .app-card { flex-direction: row; }
+    .app-visual {
+      flex: 0 0 clamp(280px, 38%, 440px);
+      aspect-ratio: auto;
+      position: relative;
+      min-height: 180px;
+      border-bottom: 0;
+      border-right: 1px solid var(--line);
+    }
+    .app-visual :global(svg) { position: absolute; inset: 0; }
+    .app-body { padding: clamp(1.5rem, 3vw, 2.25rem); }
+  }
+
+  @media (min-width: 960px) {
+    .apps-head { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 3rem; }
+    .apps-note { justify-self: end; }
+  }
+
+  @media (min-width: 1100px) {
+    .app-cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 2rem; }
+  }
+
+  @media (min-width: 1280px) {
+    .apps-grid { gap: 1.75rem; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .app-card, .chip { transition: none; }
+    .app-card:hover { transform: none; }
+  }
+</style>

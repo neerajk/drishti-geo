@@ -1,0 +1,83 @@
+---
+import { ABOUT } from '../content/approach';
+
+// Equal-weight sector tags: defence and security is one sector among several.
+// Framed as capability (sectors we can support), not as past work.
+const DOMAINS = [
+  'Environmental and climate',
+  'Agriculture and forestry',
+  'Urban planning and infrastructure',
+  'Government and NGOs',
+  'Research',
+  'Defence and security',
+];
+---
+<section class="section" id="about" aria-labelledby="about-heading">
+  <div class="container">
+    <div class="intro" data-reveal>
+      <h2 id="about-heading">{ABOUT.heading}</h2>
+      <div class="copy">
+        {ABOUT.paragraphs.map((p) => <p class="lede">{p}</p>)}
+      </div>
+    </div>
+
+    <div class="domains" data-reveal>
+      <p class="mono domains-label" id="domains-label">Sectors we can support</p>
+      <ul class="tags" aria-labelledby="domains-label">
+        {DOMAINS.map((d) => <li class="mono tag">{d}</li>)}
+      </ul>
+    </div>
+
+    <h3 class="sr-only" id="approach-heading">Our approach</h3>
+    <ol class="steps" aria-labelledby="approach-heading">
+      {ABOUT.steps.map((s) => (
+        <li class="step" data-reveal>
+          <span class="mono step-n" aria-hidden="true">{s.n}</span>
+          <h4 class="step-title"><span class="sr-only">Step {s.n}: </span>{s.title}</h4>
+          <p class="step-text">{s.text}</p>
+        </li>
+      ))}
+    </ol>
+  </div>
+</section>
+
+<style>
+  .section { padding-top: clamp(2.5rem, 5vw, 4rem); }
+  .intro { max-width: 52rem; }
+  .intro h2 { max-width: 22ch; }
+  .copy { display: grid; gap: 0.25rem; }
+
+  /* Sectors */
+  .domains { margin-top: 2.5rem; }
+  .domains-label { margin-bottom: 0.75rem; }
+  .tags { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .tag {
+    padding: 0.4rem 0.8rem; border: 1px solid var(--line-strong); border-radius: 999px;
+    background: var(--bg-raised); color: var(--text);
+  }
+
+  /* Approach: vertical timeline on mobile */
+  .steps { margin: 3.5rem 0 0; padding: 0; list-style: none; display: grid; gap: 2rem; }
+  .step { position: relative; padding-left: 2.25rem; }
+  .step::before {
+    content: ''; position: absolute; left: 0.3rem; top: 0.45rem; bottom: -2rem;
+    width: 1px; background: var(--line-strong);
+  }
+  .step:last-child::before { display: none; }
+  .step::after {
+    content: ''; position: absolute; left: 0; top: 0.4rem; width: 0.65rem; height: 0.65rem;
+    border-radius: 50%; background: var(--bg); border: 2px solid var(--lime);
+  }
+  .step-n { color: var(--lime); display: block; margin-bottom: 0.35rem; }
+  .step-title { font-family: var(--font-display); font-size: var(--fs-h3); font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; margin: 0; }
+  .step-text { color: var(--text-muted); margin-top: 0.5rem; font-size: 0.975rem; max-width: 36ch; }
+
+  /* Horizontal timeline on desktop */
+  @media (min-width: 960px) {
+    .steps { grid-template-columns: repeat(4, 1fr); gap: 2rem; margin-top: 4.5rem; }
+    .step { padding: 2rem 0 0; }
+    .step::before { left: 0.65rem; right: -2rem; top: 0.3rem; bottom: auto; width: auto; height: 1px; }
+    .step::after { left: 0; top: 0; width: 0.75rem; height: 0.75rem; }
+    .step:last-child::before { display: none; }
+  }
+</style>

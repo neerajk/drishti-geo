@@ -1,0 +1,343 @@
+---
+import { SITE, NAV } from '../config/site';
+
+// Match with or without trailing slash.
+const trim = (p: string) => p.replace(/\/+$/, '') || '/';
+const current = trim(Astro.url.pathname);
+---
+<header class="nav" data-nav>
+  <div class="container nav__bar">
+    <a class="nav__brand" href="/">
+      <svg class="nav__mark" viewBox="0 0 28 28" width="28" height="28" fill="none" aria-hidden="true" focusable="false">
+        <rect x="1" y="1" width="26" height="26" rx="7" stroke="currentColor" stroke-opacity="0.4" />
+        <path d="M5 21c3-1.2 4.5-6 8.5-6s5.5 4 9.5 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+        <path d="M5 15.5c3-1 4.5-4.5 8.5-4.5s5 2.5 9.5 1" stroke="currentColor" stroke-opacity="0.6" stroke-width="1.5" stroke-linecap="round" />
+        <circle cx="20.5" cy="7.5" r="2.2" fill="var(--lime)" />
+      </svg>
+      <span class="nav__name">{SITE.name}</span>
+    </a>
+
+    <button class="nav__toggle" type="button" aria-expanded="false" aria-controls="nav-panel" data-nav-toggle>
+      <span class="sr-only">Menu</span>
+      <span class="nav__bars" aria-hidden="true"><span></span><span></span><span></span></span>
+    </button>
+
+    <div class="nav__scrim" data-nav-scrim aria-hidden="true"></div>
+
+    <div class="nav__panel" id="nav-panel" data-nav-panel>
+      <nav aria-label="Primary">
+        <ul class="nav__links">
+          {NAV.map((item) => (
+            <li><a class="nav__link" href={item.href} aria-current={trim(item.href) === current ? 'page' : undefined}>{item.label}</a></li>
+          ))}
+        </ul>
+      </nav>
+      <a class="btn btn-primary nav__cta" href="/contact/">Discuss a Project</a>
+    </div>
+  </div>
+</header>
+
+<style>
+  /* ---------- Base (no JS, mobile): links stack visibly under the wordmark ---------- */
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.25s var(--ease);
+  }
+  /* Blur lives on a pseudo-element so the header itself is not a containing block for the scrim/drawer. */
+  .nav::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: rgba(10, 15, 20, 0.72);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    backdrop-filter: blur(14px) saturate(140%);
+    transition: background 0.25s var(--ease);
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .nav::before { background: rgba(10, 15, 20, 0.94); }
+  }
+  .nav.is-scrolled { border-bottom-color: var(--line); }
+
+  .nav__bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 4rem;
+  }
+
+  .nav__brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.65rem;
+    min-height: 44px;
+    text-decoration: none;
+    color: var(--text);
+  }
+  .nav__mark { color: var(--text); flex: none; }
+  .nav__name {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 1.2rem;
+    letter-spacing: -0.02em;
+  }
+
+  .nav__toggle, .nav__scrim { display: none; }
+
+  .nav__panel {
+    flex-basis: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 1rem;
+    padding-bottom: 0.75rem;
+  }
+  .nav__links { display: flex; flex-wrap: wrap; gap: 0 0.25rem; }
+  .nav__link {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding-inline: 0.75rem;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+  .nav__link:hover { color: var(--text); }
+  /* Current page: brighter text plus a lime underline (shape, not colour alone). */
+  .nav__link[aria-current='page'] { color: var(--text); }
+  .nav__link[aria-current='page']::after {
+    content: '';
+    position: absolute;
+    left: 0.75rem;
+    right: 0.75rem;
+    bottom: 8px;
+    height: 2px;
+    background: var(--lime);
+  }
+  .nav__cta {
+    min-height: 44px;
+    justify-content: center;
+    padding: 0.6rem 1.15rem;
+    font-size: 0.925rem;
+    white-space: nowrap;
+  }
+
+  /* Without JS the stacked header would be tall; let it scroll away instead of sticking. */
+  @media (max-width: 959.98px) {
+    :global(html:not(.js)) .nav { position: relative; }
+  }
+
+  /* ---------- Mobile with JS: hamburger + drawer ---------- */
+  @media (max-width: 959.98px) {
+    :global(html.js) .nav__bar { flex-wrap: nowrap; }
+
+    :global(html.js) .nav__toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      height: 44px;
+      margin-right: -10px;
+      padding: 0;
+      background: transparent;
+      border: 0;
+      border-radius: 10px;
+      color: var(--text);
+      cursor: pointer;
+    }
+    :global(html.js) .nav__bars {
+      position: relative;
+      display: block;
+      width: 22px;
+      height: 14px;
+    }
+    :global(html.js) .nav__bars span {
+      position: absolute;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      border-radius: 2px;
+      background: currentColor;
+      transition: transform 0.25s var(--ease), opacity 0.2s, top 0.25s var(--ease);
+    }
+    :global(html.js) .nav__bars span:nth-child(1) { top: 0; }
+    :global(html.js) .nav__bars span:nth-child(2) { top: 6px; }
+    :global(html.js) .nav__bars span:nth-child(3) { top: 12px; }
+    :global(html.js) .nav.is-open .nav__bars span:nth-child(1) { top: 6px; transform: rotate(45deg); }
+    :global(html.js) .nav.is-open .nav__bars span:nth-child(2) { opacity: 0; }
+    :global(html.js) .nav.is-open .nav__bars span:nth-child(3) { top: 6px; transform: rotate(-45deg); }
+
+    :global(html.js) .nav.is-open::before { background: rgba(10, 15, 20, 0.97); }
+
+    /* Dim the page behind the drawer; click handling is in the script. */
+    :global(html.js) .nav__scrim {
+      display: block;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      width: 100%;
+      height: 100vh;
+      height: 100dvh;
+      background: rgba(4, 7, 10, 0.6);
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.25s var(--ease), visibility 0.25s;
+    }
+    :global(html.js) .nav.is-open .nav__scrim { opacity: 1; visibility: visible; }
+
+    /* visibility:hidden keeps the closed drawer out of the tab order and the accessibility tree. */
+    :global(html.js) .nav__panel {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      z-index: 1;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 1.25rem;
+      max-height: calc(100vh - 4rem);
+      max-height: calc(100dvh - 4rem);
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding: 0.5rem var(--gutter) 1.75rem;
+      background: var(--bg-raised);
+      border-bottom: 1px solid var(--line);
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-8px);
+      transition: opacity 0.25s var(--ease), transform 0.25s var(--ease), visibility 0.25s;
+    }
+    :global(html.js) .nav.is-open .nav__panel {
+      opacity: 1;
+      visibility: visible;
+      transform: none;
+    }
+
+    :global(html.js) .nav__links { flex-direction: column; gap: 0; counter-reset: nav; }
+    :global(html.js) .nav__links li { counter-increment: nav; border-bottom: 1px solid var(--line); }
+    :global(html.js) .nav__link {
+      display: flex;
+      width: 100%;
+      min-height: 56px;
+      padding-inline: 0;
+      gap: 1rem;
+      color: var(--text);
+      font-family: var(--font-display);
+      font-size: 1.35rem;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+    }
+    :global(html.js) .nav__link::before {
+      content: counter(nav, decimal-leading-zero);
+      font-family: var(--font-mono);
+      font-size: var(--fs-mono);
+      letter-spacing: 0.08em;
+      color: var(--lime);
+      align-self: center;
+    }
+    :global(html.js) .nav__link[aria-current='page'] {
+      padding-left: 0.75rem;
+      box-shadow: inset 3px 0 0 var(--lime);
+    }
+    :global(html.js) .nav__link[aria-current='page']::after { content: none; }
+    :global(html.js) .nav__cta { min-height: 48px; }
+  }
+
+  /* ---------- 960px and up: inline links, no toggle ---------- */
+  @media (min-width: 960px) {
+    .nav__bar { flex-wrap: nowrap; gap: 2rem; }
+    .nav__panel {
+      flex: 1;
+      flex-basis: auto;
+      justify-content: flex-end;
+      flex-wrap: nowrap;
+      gap: 1.5rem;
+      padding-bottom: 0;
+    }
+    .nav__links { flex-wrap: nowrap; gap: 0.25rem; }
+    .nav__link::after {
+      content: '';
+      position: absolute;
+      left: 0.75rem;
+      right: 0.75rem;
+      bottom: 8px;
+      height: 1px;
+      background: var(--lime);
+      transform: scaleX(0);
+      transform-origin: left;
+      transition: transform 0.3s var(--ease);
+    }
+    .nav__link:hover::after,
+    .nav__link[aria-current='page']::after { transform: scaleX(1); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .nav, .nav::before, .nav__panel, .nav__scrim, .nav__bars span, .nav__link::after { transition: none; }
+  }
+
+  /* Scroll lock while the drawer is open (class set by the script, mobile only). */
+  :global(html.nav-lock) { overflow: hidden; overscroll-behavior: none; }
+</style>
+
+<script>
+  const header = document.querySelector<HTMLElement>('[data-nav]');
+  const toggle = header?.querySelector<HTMLButtonElement>('[data-nav-toggle]');
+  const panel = header?.querySelector<HTMLElement>('[data-nav-panel]');
+  const scrim = header?.querySelector<HTMLElement>('[data-nav-scrim]');
+
+  if (header && toggle && panel) {
+    const root = document.documentElement;
+    const desktop = window.matchMedia('(min-width: 960px)');
+    const isOpen = () => header.classList.contains('is-open');
+
+    const setOpen = (open: boolean) => {
+      header.classList.toggle('is-open', open);
+      toggle.setAttribute('aria-expanded', String(open));
+      root.classList.toggle('nav-lock', open);
+    };
+
+    toggle.addEventListener('click', () => setOpen(!isOpen()));
+
+    // Close when a link inside the drawer is followed.
+    panel.addEventListener('click', (e) => {
+      if ((e.target as Element).closest('a')) setOpen(false);
+    });
+
+    // Esc closes and returns focus to the button.
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && isOpen()) {
+        setOpen(false);
+        toggle.focus();
+      }
+    });
+
+    // Outside click: the scrim, or anything that is not the panel or the button.
+    document.addEventListener('click', (e) => {
+      if (!isOpen()) return;
+      const t = e.target as Node;
+      if (t === scrim || (!panel.contains(t) && !toggle.contains(t))) setOpen(false);
+    });
+
+    // Tabbing out of the header closes the drawer rather than leaving focus behind the scrim.
+    header.addEventListener('focusout', (e) => {
+      const next = e.relatedTarget as Node | null;
+      if (isOpen() && next && !header.contains(next)) setOpen(false);
+    });
+
+    // Growing past the breakpoint with the drawer open would otherwise leave the scroll lock on.
+    desktop.addEventListener('change', (e) => { if (e.matches) setOpen(false); });
+  }
+
+  // Hairline border appears once the page has scrolled.
+  if (header) {
+    const update = () => header.classList.toggle('is-scrolled', window.scrollY > 8);
+    update();
+    window.addEventListener('scroll', update, { passive: true });
+  }
+</script>

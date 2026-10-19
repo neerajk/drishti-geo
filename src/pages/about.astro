@@ -1,0 +1,30 @@
+---
+import Base from '../layouts/Base.astro';
+import Nav from '../components/Nav.astro';
+import PageHeader from '../components/PageHeader.astro';
+import About from '../components/About.astro';
+import CtaBand from '../components/CtaBand.astro';
+import Footer from '../components/Footer.astro';
+import { SITE } from '../config/site';
+---
+<Base
+  title={`About | ${SITE.name}`}
+  description="How Drishti Geo works: a four-step approach to Earth observation, GIS and machine learning, and the sectors we can support."
+>
+  <Nav />
+  <main id="main">
+    <PageHeader
+      eyebrow="About us"
+      title="About"
+      lede="Where our methods apply and how we work."
+    />
+    <About />
+    <CtaBand
+      heading="Have a problem in mind?"
+      text="Tell us the area and the decision it feeds, and we will say whether remote sensing, GIS or GeoAI can help."
+      primary={{ label: 'Discuss a Project', href: '/contact/' }}
+      secondary={{ label: 'Explore Services', href: '/services/' }}
+    />
+  </main>
+  <Footer />
+</Base>

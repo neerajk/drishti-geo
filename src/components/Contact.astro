@@ -1,0 +1,578 @@
+---
+import { SITE } from '../config/site';
+
+// The form is rendered ONLY when a Web3Forms key is configured.
+const key = typeof SITE.web3formsKey === 'string' ? SITE.web3formsKey.trim() : '';
+const hasForm = key !== '';
+const mailto = `mailto:${SITE.email}?subject=${encodeURIComponent(SITE.emailSubject)}`;
+
+const SECTORS = [
+  'Environment & climate',
+  'Agriculture & forestry',
+  'Urban & infrastructure',
+  'Government / NGO',
+  'Research / technology',
+  'Defence & security',
+  'Other',
+];
+---
+
+<section class="section contact" id="contact" aria-labelledby="contact-heading">
+  <div class="container">
+    <div class:list={['contact-grid', { 'contact-grid--solo': !hasForm }]}>
+      <div class="contact-copy" data-reveal>
+        <h2 id="contact-heading">Discuss a project</h2>
+        <p class="lede">
+          Tell us the problem, the area and the decision it feeds. We will reply with whether and how
+          remote sensing, GIS or GeoAI can help.
+        </p>
+
+        <div class="mail-block">
+          <p class="mono mail-label">Email us</p>
+          <p class="mail-address" id="contact-address" data-address>{SITE.email}</p>
+          <div class="mail-actions">
+            <a class="btn btn-primary" href={mailto}>Email us</a>
+            <button type="button" class="btn btn-ghost" data-copy aria-describedby="copy-status">
+              Copy address
+            </button>
+          </div>
+          <p class="copy-status" id="copy-status" data-copy-status aria-live="polite"></p>
+        </div>
+      </div>
+
+      {
+        hasForm && (
+          <div class="form-wrap" data-reveal>
+            <form
+              class="enquiry"
+              data-enquiry
+              data-key={key}
+              data-subject={`${SITE.name} website enquiry`}
+              data-from-name={`${SITE.name} website`}
+              data-mailto={mailto}
+              novalidate
+              aria-labelledby="form-heading"
+            >
+              <h3 id="form-heading" class="form-title">Send an enquiry</h3>
+              <p class="req-note mono">
+                <span aria-hidden="true">*</span> Required field
+              </p>
+
+              <div class="field">
+                <label for="f-name">
+                  Name <span aria-hidden="true" class="req">*</span>
+                </label>
+                <input
+                  id="f-name"
+                  name="name"
+                  type="text"
+                  autocomplete="name"
+                  required
+                  aria-describedby="f-name-err"
+                />
+                <p class="field-error" id="f-name-err" data-error-for="name" hidden />
+              </div>
+
+              <div class="field">
+                <label for="f-email">
+                  Email <span aria-hidden="true" class="req">*</span>
+                </label>
+                <input
+                  id="f-email"
+                  name="email"
+                  type="email"
+                  autocomplete="email"
+                  required
+                  aria-describedby="f-email-err"
+                />
+                <p class="field-error" id="f-email-err" data-error-for="email" hidden />
+              </div>
+
+              <div class="field-row">
+                <div class="field">
+                  <label for="f-org">Organisation</label>
+                  <input id="f-org" name="organisation" type="text" autocomplete="organization" />
+                </div>
+                <div class="field">
+                  <label for="f-sector">Sector</label>
+                  <select id="f-sector" name="sector">
+                    <option value="">Select a sector</option>
+                    {SECTORS.map((s) => (
+                      <option value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="f-message">
+                  What problem are you trying to solve? <span aria-hidden="true" class="req">*</span>
+                </label>
+                <textarea
+                  id="f-message"
+                  name="message"
+                  rows="5"
+                  required
+                  aria-describedby="f-message-err"
+                />
+                <p class="field-error" id="f-message-err" data-error-for="message" hidden />
+              </div>
+
+              {/* Honeypot (Web3Forms convention). display:none keeps it out of tab order and the a11y tree. */}
+              <div class="hp" style="display:none" aria-hidden="true">
+                <input type="checkbox" name="botcheck" tabindex="-1" autocomplete="off" />
+              </div>
+
+              <div class="submit-row">
+                <button type="submit" class="btn btn-primary" data-submit>
+                  <span data-submit-label>Send enquiry</span>
+                </button>
+              </div>
+
+              <div class="status status-info" data-status role="status" aria-live="polite" />
+              <div class="status status-error" data-error role="alert" />
+
+              <p class="privacy">
+                Form submissions are processed by Web3Forms and delivered to our inbox. Only what you
+                enter above is sent.
+              </p>
+            </form>
+          </div>
+        )
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .contact {
+    --error: #ff8f85;
+    padding-top: clamp(2.5rem, 5vw, 4rem);
+    background: linear-gradient(180deg, var(--bg) 0%, var(--bg-raised) 100%);
+  }
+
+  .contact-grid {
+    display: grid;
+    gap: 3rem;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  @media (min-width: 960px) {
+    .contact-grid {
+      grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+      gap: 4.5rem;
+      align-items: start;
+    }
+  }
+
+  /* No form: single, wider, centred mailto block. */
+  .contact-grid--solo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .contact-grid--solo .contact-copy {
+    max-width: 44rem;
+    margin-inline: auto;
+    text-align: center;
+  }
+  .contact-grid--solo .lede {
+    margin-inline: auto;
+  }
+  .contact-grid--solo .mail-actions,
+  .contact-grid--solo .mail-block {
+    justify-content: center;
+  }
+
+  /* Mailto block */
+  .mail-block {
+    margin-top: 2.5rem;
+    padding: 1.5rem;
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+  }
+  .mail-label {
+    margin-bottom: 0.5rem;
+  }
+  .mail-address {
+    font-family: var(--font-mono);
+    font-size: clamp(1rem, 2.4vw + 0.5rem, 1.35rem);
+    color: var(--text);
+    overflow-wrap: anywhere;
+    user-select: all;
+  }
+  .mail-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 1.25rem;
+  }
+  .mail-actions .btn {
+    min-height: 44px;
+    justify-content: center;
+  }
+  .copy-status {
+    min-height: 1.5em;
+    margin-top: 0.75rem;
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono);
+    letter-spacing: 0.04em;
+    color: var(--teal);
+  }
+  .copy-status.is-fail {
+    color: var(--error);
+  }
+
+  /* Form */
+  .form-wrap {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: clamp(1.25rem, 3vw, 2.25rem);
+  }
+  .form-title {
+    margin-bottom: 0.5rem;
+  }
+  .req-note {
+    margin-bottom: 1.5rem;
+  }
+  .req {
+    color: var(--lime);
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    margin-bottom: 1.25rem;
+    min-width: 0;
+  }
+  .field-row {
+    display: grid;
+    gap: 0 1.25rem;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  @media (min-width: 640px) {
+    .field-row {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  label {
+    font-size: var(--fs-small);
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  input[type='text'],
+  input[type='email'],
+  select,
+  textarea {
+    width: 100%;
+    min-height: 44px;
+    padding: 0.7rem 0.9rem;
+    font: inherit;
+    font-size: 1rem;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--field-border);
+    border-radius: 10px;
+    color-scheme: dark;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  textarea {
+    resize: vertical;
+    min-height: 8rem;
+  }
+  select {
+    appearance: none;
+    padding-right: 2.5rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%239aa7b4' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.9rem center;
+  }
+  input:hover,
+  select:hover,
+  textarea:hover {
+    border-color: var(--text-muted);
+  }
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid var(--lime);
+    outline-offset: 2px;
+    border-color: var(--lime);
+  }
+  input[aria-invalid='true'],
+  textarea[aria-invalid='true'] {
+    border-color: var(--error);
+  }
+
+  .field-error {
+    font-size: var(--fs-small);
+    color: var(--error);
+  }
+
+  .submit-row {
+    margin-top: 0.5rem;
+  }
+  .submit-row .btn {
+    min-height: 44px;
+    justify-content: center;
+    width: 100%;
+  }
+  @media (min-width: 640px) {
+    .submit-row .btn {
+      width: auto;
+    }
+  }
+  .submit-row .btn:disabled {
+    opacity: 0.65;
+    cursor: progress;
+    transform: none;
+  }
+
+  .status {
+    margin-top: 1.25rem;
+    font-size: var(--fs-small);
+  }
+  .status-info {
+    color: var(--teal);
+  }
+  .status-info:empty,
+  .status-error:empty {
+    display: none;
+  }
+  .status-error {
+    color: var(--error);
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--error);
+    border-radius: 10px;
+  }
+  .status-error :global(a) {
+    color: var(--text);
+    text-underline-offset: 3px;
+    overflow-wrap: anywhere;
+  }
+
+  .privacy {
+    margin-top: 1.5rem;
+    font-size: var(--fs-small);
+    color: var(--text-muted);
+  }
+</style>
+
+<script>
+  // Copy-address button: Clipboard API with a legacy fallback.
+  const addressEl = document.querySelector<HTMLElement>('[data-address]');
+  const copyBtn = document.querySelector<HTMLButtonElement>('[data-copy]');
+  const copyStatus = document.querySelector<HTMLElement>('[data-copy-status]');
+  let copyTimer: number | undefined;
+
+  function showCopy(ok: boolean) {
+    if (!copyStatus) return;
+    copyStatus.textContent = ok ? 'Copied' : 'Copy failed, select the address manually';
+    copyStatus.classList.toggle('is-fail', !ok);
+    window.clearTimeout(copyTimer);
+    copyTimer = window.setTimeout(() => {
+      copyStatus.textContent = '';
+      copyStatus.classList.remove('is-fail');
+    }, 4000);
+  }
+
+  function legacyCopy(text: string): boolean {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try {
+      // Deliberate legacy fallback for browsers without the async Clipboard API.
+      const legacy = (document as unknown as { execCommand: (cmd: string) => boolean }).execCommand;
+      ok = legacy.call(document, 'copy');
+    } catch {
+      ok = false;
+    }
+    ta.remove();
+    return ok;
+  }
+
+  function selectAddress() {
+    if (!addressEl) return;
+    const range = document.createRange();
+    range.selectNodeContents(addressEl);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }
+
+  copyBtn?.addEventListener('click', async () => {
+    const text = addressEl?.textContent?.trim() ?? '';
+    if (!text) return showCopy(false);
+    let ok = false;
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        ok = true;
+      }
+    } catch {
+      ok = false;
+    }
+    if (!ok) ok = legacyCopy(text);
+    if (!ok) selectAddress();
+    showCopy(ok);
+  });
+
+  // Enquiry form (only present when a Web3Forms key is configured).
+  const form = document.querySelector<HTMLFormElement>('[data-enquiry]');
+
+  if (form) {
+    const submitBtn = form.querySelector<HTMLButtonElement>('[data-submit]')!;
+    const submitLabel = form.querySelector<HTMLElement>('[data-submit-label]')!;
+    const statusEl = form.querySelector<HTMLElement>('[data-status]')!;
+    const errorEl = form.querySelector<HTMLElement>('[data-error]')!;
+    const mailto = form.dataset.mailto ?? '';
+    const fields = Array.from(
+      form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input[required], textarea[required]'),
+    );
+
+    const MESSAGES: Record<string, string> = {
+      name: 'Please enter your name.',
+      email: 'Please enter your email address.',
+      message: 'Please describe the problem you are trying to solve.',
+    };
+
+    function errorFor(field: HTMLInputElement | HTMLTextAreaElement): HTMLElement | null {
+      return form!.querySelector<HTMLElement>(`[data-error-for="${field.name}"]`);
+    }
+
+    function setFieldError(field: HTMLInputElement | HTMLTextAreaElement, text: string) {
+      const el = errorFor(field);
+      if (text) {
+        field.setAttribute('aria-invalid', 'true');
+        if (el) {
+          el.textContent = text;
+          el.hidden = false;
+        }
+      } else {
+        field.removeAttribute('aria-invalid');
+        if (el) {
+          el.textContent = '';
+          el.hidden = true;
+        }
+      }
+    }
+
+    function validateField(field: HTMLInputElement | HTMLTextAreaElement): boolean {
+      // Treat whitespace-only as empty for required text fields.
+      const blank = field.required && field.value.trim() === '';
+      if (blank) {
+        field.setCustomValidity(MESSAGES[field.name] ?? 'This field is required.');
+      } else {
+        field.setCustomValidity('');
+      }
+      if (field.validity.valid) {
+        setFieldError(field, '');
+        return true;
+      }
+      let text = MESSAGES[field.name] ?? 'This field is required.';
+      if (field.validity.typeMismatch && !blank) text = 'Enter a valid email address, e.g. name@example.com.';
+      setFieldError(field, text);
+      return false;
+    }
+
+    function clearMessages() {
+      statusEl.textContent = '';
+      errorEl.textContent = '';
+    }
+
+    function showError(text: string) {
+      errorEl.textContent = '';
+      errorEl.append(`${text} Your message has been kept below. You can email us instead at `);
+      const a = document.createElement('a');
+      a.href = mailto;
+      a.textContent = mailto.replace(/^mailto:/, '').split('?')[0];
+      errorEl.append(a, '.');
+    }
+
+    function setSending(sending: boolean) {
+      submitBtn.disabled = sending;
+      if (sending) submitBtn.setAttribute('aria-busy', 'true');
+      else submitBtn.removeAttribute('aria-busy');
+      submitLabel.textContent = sending ? 'Sending…' : 'Send enquiry';
+    }
+
+    fields.forEach((field) => {
+      field.addEventListener('input', () => {
+        if (field.getAttribute('aria-invalid') === 'true') validateField(field);
+      });
+      field.addEventListener('blur', () => {
+        if (field.value !== '') validateField(field);
+      });
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (submitBtn.disabled) return;
+      clearMessages();
+
+      let firstInvalid: HTMLInputElement | HTMLTextAreaElement | null = null;
+      for (const field of fields) {
+        if (!validateField(field) && !firstInvalid) firstInvalid = field;
+      }
+      if (firstInvalid) {
+        firstInvalid.focus();
+        return;
+      }
+
+      const data = new FormData(form);
+      const get = (k: string) => String(data.get(k) ?? '').trim();
+      const organisation = get('organisation');
+      const sector = get('sector');
+      const meta: string[] = [];
+      if (organisation) meta.push(`Organisation: ${organisation}`);
+      if (sector) meta.push(`Sector: ${sector}`);
+      const message = (meta.length ? meta.join('\n') + '\n\n' : '') + get('message');
+
+      const payload = {
+        access_key: form.dataset.key ?? '',
+        subject: form.dataset.subject ?? 'Website enquiry',
+        from_name: form.dataset.fromName ?? 'Website',
+        name: get('name'),
+        email: get('email'),
+        message,
+        botcheck: form.querySelector<HTMLInputElement>('input[name="botcheck"]')?.checked ?? false,
+      };
+
+      setSending(true);
+      statusEl.textContent = 'Sending…';
+
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 15000);
+
+      try {
+        const res = await fetch('https://api.web3forms.com/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+        const json = await res.json().catch(() => null);
+        if (json && json.success === true) {
+          statusEl.textContent = 'Thanks, your message was sent.';
+          errorEl.textContent = '';
+          form.reset();
+        } else {
+          statusEl.textContent = '';
+          showError('Sorry, your message could not be sent.');
+        }
+      } catch {
+        statusEl.textContent = '';
+        showError('Sorry, your message could not be sent.');
+      } finally {
+        window.clearTimeout(timeout);
+        setSending(false);
+      }
+    });
+  }
+</script>

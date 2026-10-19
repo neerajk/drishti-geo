@@ -1,0 +1,90 @@
+---
+import { DELIVERABLES, DELIVERABLES_NOTE } from '../content/deliverables';
+
+// Small decorative icon per deliverable id (stroke style matches the site's line visuals).
+const ICONS: Record<string, string> = {
+  'maps-spatial-data': '<path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/>',
+  'monitoring-reports': '<path d="M4 20V4"/><path d="M4 20h16"/><path d="M7 15l4-4 3 3 5-6"/>',
+  'data-pipelines': '<rect x="3" y="4" width="6" height="5" rx="1"/><rect x="15" y="4" width="6" height="5" rx="1"/><rect x="9" y="15" width="6" height="5" rx="1"/><path d="M6 9v3h12V9M12 12v3"/>',
+  'decision-support-prototypes': '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M7 13v-2M11 13V8M15 13v-3"/>',
+};
+---
+<section class="section band" id="deliverables" aria-labelledby="deliverables-heading">
+  <div class="container">
+    <header class="head" data-reveal>
+      <div class="eyebrow-row">
+        <span class="eyebrow">Deliverables</span>
+        <span class="mono badge">Illustrative</span>
+      </div>
+      <h2 id="deliverables-heading">What you receive</h2>
+      <p class="lede">
+        However the services are combined, a project ends in one or more of four kinds of output.
+      </p>
+      <p class="note">{DELIVERABLES_NOTE}</p>
+    </header>
+    <div class="grid">
+      {DELIVERABLES.map((d, i) => (
+        <article class="card" id={d.id} aria-labelledby={`${d.id}-title`} data-reveal style={`--d:${i * 90}ms`}>
+          <svg class="icon" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" set:html={ICONS[d.id] ?? ''} />
+          <h3 id={`${d.id}-title`}>{d.title}</h3>
+          <p class="summary">{d.summary}</p>
+          <ul class="list">
+            {d.includes.map((item) => <li>{item}</li>)}
+          </ul>
+        </article>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .band { border-top: 1px solid var(--line); background: var(--bg-raised); }
+  .head { margin-bottom: clamp(2.25rem, 5vw, 3.5rem); }
+  .eyebrow-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; margin-bottom: 1rem; }
+  .eyebrow-row .eyebrow { margin-bottom: 0; }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.6rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    color: var(--text-muted);
+  }
+  .note { max-width: 62ch; margin-top: 1rem; font-size: var(--fs-small); line-height: 1.6; color: var(--text-muted); }
+
+  .grid { display: grid; grid-template-columns: 1fr; gap: 1.25rem; }
+  @media (min-width: 640px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; } }
+  @media (min-width: 1100px) { .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+  .card {
+    display: flex;
+    flex-direction: column;
+    padding: 1.5rem;
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    transition: transform 0.3s var(--ease), border-color 0.3s var(--ease), box-shadow 0.3s var(--ease);
+  }
+  .card[data-reveal] { transition-delay: var(--d, 0ms); }
+  .card:hover {
+    transform: translateY(-4px);
+    border-color: var(--line-strong);
+    box-shadow: 0 18px 40px -22px rgba(0, 0, 0, 0.8);
+  }
+  /* Multi-column: each card spans four shared rows (icon, title, description, list) so dividers align across a row. */
+  @media (min-width: 640px) {
+    .card { display: grid; grid-row: span 4; grid-template-rows: subgrid; row-gap: 0; }
+    .list { margin-top: 0; }
+  }
+  .icon { color: var(--lime); margin-bottom: 1.1rem; flex: none; }
+  .card h3 { margin-bottom: 0.7rem; }
+  .summary { color: var(--text-muted); font-size: 0.97rem; line-height: 1.6; margin-bottom: 1.2rem; }
+  .list { display: grid; gap: 0.45rem; margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--line); }
+  .list li { position: relative; padding-left: 1.05rem; font-size: 0.93rem; line-height: 1.55; color: var(--text); }
+  .list li::before { content: ''; position: absolute; left: 0; top: 0.62em; width: 5px; height: 1px; background: var(--text-muted); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .card { transition: none; }
+    .card:hover { transform: none; }
+  }
+</style>

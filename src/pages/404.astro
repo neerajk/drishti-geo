@@ -1,0 +1,105 @@
+---
+import Base from '../layouts/Base.astro';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+import { SITE } from '../config/site';
+
+// Absolute-path links: relative hrefs would resolve against the missing URL.
+const links = [
+  { label: 'Services', href: '/services/' },
+  { label: 'Applications', href: '/applications/' },
+  { label: 'About', href: '/about/' },
+  { label: 'Contact', href: '/contact/' },
+];
+---
+<Base title={`Page not found | ${SITE.name}`} description={`The page you were looking for does not exist. Return to the ${SITE.name} home page or jump to a section.`} noindex>
+  <Nav />
+  <main id="main" class="nf">
+    <div class="container nf-wrap">
+    <div class="nf-inner">
+      <p class="mono nf-code"><span class="nf-dot" aria-hidden="true"></span>404 &middot; NO DATA FOR THIS TILE</p>
+      <h1 class="nf-title">This page is outside the coverage area.</h1>
+      <p class="lede">
+        The address may have changed or never existed. Head back to the main scene, or jump straight to a page.
+      </p>
+      <div class="nf-actions">
+        <a class="btn btn-primary" href="/">Back to home <span aria-hidden="true">&rarr;</span></a>
+      </div>
+      <nav class="nf-links" aria-label="Pages">
+        <ul>
+          {links.map((l) => <li><a class="mono" href={l.href}>{l.label}</a></li>)}
+        </ul>
+      </nav>
+    </div>
+    <svg class="nf-grid" viewBox="0 0 400 400" aria-hidden="true" focusable="false">
+      <g fill="none" stroke="currentColor" stroke-width="1">
+        {[0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => <path d={`M${i * 50} 0V400M0 ${i * 50}H400`} />)}
+      </g>
+      <path d="M0 300c60-40 110-10 170-50s90-90 150-80 60 40 80 60" fill="none" stroke="var(--lime)" stroke-width="1.5" opacity="0.6" />
+      <path d="M0 340c70-30 120 0 180-40s80-70 140-60 70 30 80 50" fill="none" stroke="var(--lime)" stroke-width="1" opacity="0.3" />
+    </svg>
+    </div>
+  </main>
+  <Footer />
+</Base>
+
+<style>
+  .nf {
+    position: relative;
+    overflow: hidden;
+    min-height: 70vh;
+    display: flex;
+    align-items: center;
+    padding-block: var(--space-section);
+  }
+  .nf-inner { position: relative; z-index: 1; min-width: 0; }
+  .nf-code {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    color: var(--lime);
+    margin-bottom: 1.25rem;
+  }
+  .nf-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--lime);
+    animation: nf-pulse 2.4s ease-in-out infinite;
+  }
+  .nf-title { font-size: var(--fs-h2); max-width: 20ch; }
+  .nf-actions { margin-top: 2rem; }
+  .nf-actions .btn { min-height: 44px; }
+  .nf-links { margin-top: 2.5rem; }
+  .nf-links ul { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; }
+  .nf-links a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+  .nf-links a:hover { color: var(--lime); }
+  /* Below 960px the chart sits in normal flow under the content, never over the text. */
+  .nf-grid {
+    position: relative;
+    display: block;
+    width: 100%;
+    max-width: 320px;
+    margin: 2.5rem auto 0;
+    color: var(--line);
+    opacity: 0.5;
+    pointer-events: none;
+  }
+  @keyframes nf-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  @media (min-width: 960px) {
+    .nf-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 3rem; align-items: center; }
+    .nf-grid { margin: 0; max-width: none; opacity: 0.7; }
+  }
+</style>

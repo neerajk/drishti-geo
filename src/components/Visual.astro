@@ -1,0 +1,855 @@
+---
+// Decorative generated "raster tiles", one per service domain. Everything is computed once at build
+// time from fixed seeds (mulberry32 + simplex-noise), so output is identical on every build and no
+// JS ships to the browser. All colours come from CSS variables (see the <style> block).
+// To add a tile: write a builder below, add it to BUILDERS, and add its ramp classes in the CSS.
+import { createNoise2D } from 'simplex-noise';
+import { contours } from 'd3-contour';
+import type { VisualKey } from '../content/services';
+
+interface Props {
+  kind: VisualKey;
+  class?: string;
+}
+const { kind, class: className } = Astro.props;
+
+type Pt = [number, number];
+const W = 320;
+const H = 180;
+
+// ---------- helpers ----------
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function makeNoise(seed: number) {
+  const rng = mulberry32(seed);
+  const n2 = createNoise2D(rng); // consumes rng for the permutation table, then rng continues deterministically
+  // Fractal noise, roughly in [-1, 1].
+  const fbm = (x: number, y: number, octaves = 3): number => {
+    let sum = 0, amp = 1, norm = 0, freq = 1;
+    for (let o = 0; o < octaves; o++) {
+      sum += amp * n2(x * freq, y * freq);
+      norm += amp;
+      amp *= 0.5;
+      freq *= 2.03;
+    }
+    return sum / norm;
+  };
+  return { rng, n2, fbm };
+}
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+const f = (n: number) => String(Math.round(n * 10) / 10); // 1 decimal keeps tiles small
+function at<T>(arr: T[], i: number): T {
+  return arr[i] as T;
+}
+
+const poly = (p: Pt[], close = true) =>
+  'M' + p.map(([x, y]) => `${f(x)} ${f(y)}`).join('L') + (close ? 'Z' : '');
+
+// Catmull-Rom spline through points, emitted as cubic Beziers.
+function spline(p: Pt[], close = false): string {
+  const n = p.length;
+  const g = (i: number): Pt => (close ? at(p, (i + n) % n) : at(p, clamp(i, 0, n - 1)));
+  let d = `M${f(g(0)[0])} ${f(g(0)[1])}`;
+  const segs = close ? n : n - 1;
+  for (let i = 0; i < segs; i++) {
+    const p0 = g(i - 1), p1 = g(i), p2 = g(i + 1), p3 = g(i + 2);
+    d += `C${f(p1[0] + (p2[0] - p0[0]) / 6)} ${f(p1[1] + (p2[1] - p0[1]) / 6)} ${f(p2[0] - (p3[0] - p1[0]) / 6)} ${f(p2[1] - (p3[1] - p1[1]) / 6)} ${f(p2[0])} ${f(p2[1])}`;
+  }
+  return d + (close ? 'Z' : '');
+}
+
+// Wobbly closed outline around a centre (used for study-area and change outlines).
+function blob(cx: number, cy: number, rx: number, ry: number, rng: () => number, wob = 0.16, n = 14): Pt[] {
+  return Array.from({ length: n }, (_, k) => {
+    const a = (k / n) * Math.PI * 2;
+    const r = 1 + (rng() - 0.5) * 2 * wob;
+    return [cx + Math.cos(a) * rx * r, cy + Math.sin(a) * ry * r] as Pt;
+  });
+}
+
+// Polygon of a given width around a centre line (rivers).
+function ribbon(c: Pt[], widths: number[]): Pt[] {
+  const left: Pt[] = [], right: Pt[] = [];
+  c.forEach(([x, y], i) => {
+    const a = at(c, Math.max(0, i - 1)), b = at(c, Math.min(c.length - 1, i + 1));
+    const tx = b[0] - a[0], ty = b[1] - a[1];
+    const len = Math.hypot(tx, ty) || 1;
+    const nx = -ty / len, ny = tx / len;
+    const w = at(widths, i) / 2;
+    left.push([x + nx * w, y + ny * w]);
+    right.push([x - nx * w, y - ny * w]);
+  });
+  return left.concat(right.reverse());
+}
+
+// Rank-based thresholds so every level is used regardless of the noise range.
+function quantileLevels(vals: number[], k: number): (v: number) => number {
+  const s = [...vals].sort((a, b) => a - b);
+  const th = Array.from({ length: k - 1 }, (_, i) => at(s, Math.floor((s.length * (i + 1)) / k)));
+  return (v) => th.filter((t) => v >= t).length;
+}
+
+// Level grid -> one stroked path per level (horizontal runs, stroke-width = cell). Level 0 is the
+// background rect, so it is not drawn.
+function raster(lv: number[][], cell: number, nLevels: number, ox = 0, oy = 0, cls = 's'): string {
+  const d: string[] = Array.from({ length: nLevels }, () => '');
+  lv.forEach((row, j) => {
+    let i = 0;
+    while (i < row.length) {
+      const l = at(row, i);
+      let k = i + 1;
+      while (k < row.length && at(row, k) === l) k++;
+      if (l > 0) d[l] += `M${ox + i * cell} ${oy + (j + 0.5) * cell}h${(k - i) * cell}`;
+      i = k;
+    }
+  });
+  const paths = d.map((p, l) => (p ? `<path class="${cls}${l}" d="${p}"/>` : '')).join('');
+  return `<g fill="none" stroke-width="${cell}" shape-rendering="crispEdges">${paths}</g>`;
+}
+
+function grid<T>(cols: number, rows: number, fn: (i: number, j: number) => T): T[][] {
+  return Array.from({ length: rows }, (_, j) => Array.from({ length: cols }, (_, i) => fn(i, j)));
+}
+
+// Corner label with a translucent backing so it reads over any texture.
+function label(x: number, y: number, text: string, anchor: 'start' | 'end' = 'start', cls = 'tx'): string {
+  const w = Math.round(text.length * 4.4 + 7);
+  const x0 = anchor === 'start' ? x : x - w;
+  const tx = anchor === 'start' ? x0 + 3.5 : x0 + w - 3.5;
+  return `<rect class="lb" x="${x0}" y="${y - 7.5}" width="${w}" height="11" rx="2"/><text class="${cls}" x="${tx}" y="${y}" text-anchor="${anchor}">${text}</text>`;
+}
+
+// Scene frame: thin border plus scale ticks along the top and left edges.
+const FRAME = (() => {
+  let t = '';
+  for (let x = 20; x < W; x += 20) t += `M${x} 0v${x % 100 === 0 ? 5 : 3}`;
+  for (let y = 20; y < H; y += 20) t += `M0 ${y}h${y % 100 === 0 ? 5 : 3}`;
+  return `<path class="tk" d="${t}"/><rect class="bd" x=".5" y=".5" width="319" height="179"/>`;
+})();
+
+// ---------- builders ----------
+
+// SAR backscatter: multiplicative (exponential) speckle over a land/sea split with a coastline.
+function sar(): string {
+  const { rng, n2, fbm } = makeNoise(11);
+  const cell = 8;
+  const coast = (y: number) => 150 + 55 * Math.sin((y / H) * 5.2 + 0.5) + 24 * n2(y / 50, 3.1);
+  const lv = grid(40, 23, (i, j) => {
+    const cx = (i + 0.5) * cell, cy = (j + 0.5) * cell;
+    const d = coast(cy) - cx; // > 0 on land
+    let m = d > 0 ? 0.3 + 0.4 * (fbm(cx / 55, cy / 55) * 0.5 + 0.5) : 0.045 * (1 + 0.9 * Math.max(0, n2(cx / 90, cy / 12)));
+    if (Math.abs(d) < 9) m *= 1.9; // bright shoreline return
+    const v = m * -Math.log(1 - rng());
+    return v < 0.035 ? 0 : v < 0.09 ? 1 : v < 0.2 ? 2 : v < 0.4 ? 3 : v < 0.8 ? 4 : 5;
+  });
+  return (
+    `<rect class="s0" width="${W}" height="${H}"/>` +
+    raster(lv, cell, 6) +
+    FRAME +
+    label(6, 15, 'VV · 10 m') +
+    label(314, 173, 'BACKSCATTER', 'end')
+  );
+}
+
+// GIS: jittered parcel mesh with a 5-class choropleth, graticule, roads, study area and symbols.
+function gis(): string {
+  const { rng, fbm } = makeNoise(23);
+  const nx = 8, ny = 5, gx = 45, gy = 40, ox = -20, oy = -10;
+  const P = grid(nx + 1, ny + 1, (i, j) => [ox + i * gx + (rng() - 0.5) * 26, oy + j * gy + (rng() - 0.5) * 24] as Pt);
+  const groups: string[] = Array.from({ length: 5 }, () => '');
+  const centres: Pt[] = [];
+  const add = (p: Pt[]) => {
+    const cx = p.reduce((s, q) => s + q[0], 0) / p.length;
+    const cy = p.reduce((s, q) => s + q[1], 0) / p.length;
+    const lvl = clamp(Math.floor(((fbm(cx / 120, cy / 100) + 0.65) / 1.3) * 5), 0, 4);
+    groups[lvl] += poly(p);
+    centres.push([cx, cy]);
+  };
+  const lerp = (a: Pt, b: Pt, t: number): Pt => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  for (let j = 0; j < ny; j++) {
+    for (let i = 0; i < nx; i++) {
+      const a = at(at(P, j), i), b = at(at(P, j), i + 1), c = at(at(P, j + 1), i + 1), d = at(at(P, j + 1), i);
+      const r = rng();
+      if (r < 0.42) add([a, b, c, d]);
+      else if (r < 0.72) {
+        if (rng() < 0.5) { add([a, b, c]); add([a, c, d]); } else { add([a, b, d]); add([b, c, d]); }
+      } else {
+        const t = 0.3 + rng() * 0.4, top = lerp(a, b, t), bot = lerp(d, c, t);
+        add([a, top, bot, d]); add([top, b, c, bot]);
+      }
+    }
+  }
+  let graticule = '';
+  for (let x = 20; x < W; x += 20) graticule += `M${x} 0v${H}`;
+  for (let y = 20; y < H; y += 20) graticule += `M0 ${y}h${W}`;
+  const roadA = spline([[-10, 128], [70, 118], [140, 92], [210, 98], [290, 60], [330, 52]]);
+  const roadB = spline([[96, -10], [110, 50], [100, 100], [130, 150], [128, 190]]);
+  const area = spline(blob(170, 92, 118, 58, rng), true);
+  const symbols = centres
+    .filter((_, k) => k % 5 === 2)
+    .slice(0, 8)
+    .map(([x, y]) => `<circle cx="${f(x)}" cy="${f(y)}" r="${f(1.8 + rng() * 2.6)}"/>`)
+    .join('');
+  return (
+    `<g stroke-linejoin="round">${groups.map((d, l) => (d ? `<path class="s${l}" d="${d}"/>` : '')).join('')}</g>` +
+    `<path class="gr" d="${graticule}"/>` +
+    `<path class="rc" d="${roadA}${roadB}"/><path class="rl" d="${roadA}${roadB}"/>` +
+    `<path class="sa" d="${area}"/>` +
+    `<g class="sy">${symbols}</g>` +
+    FRAME +
+    label(6, 15, 'EPSG:4326') +
+    label(314, 173, '5 CLASSES', 'end')
+  );
+}
+
+// Segmentation: aerial-style block grid (roads, urban lots, field parcels) coloured by class.
+function segmentation(): string {
+  const { rng, n2 } = makeNoise(37);
+  const xs: number[] = [], ys: number[] = [];
+  for (let x = -4; ; x += 46 + rng() * 36) { xs.push(x); if (x > W + 6) break; }
+  for (let y = -2; ; y += 40 + rng() * 26) { ys.push(y); if (y > H + 6) break; }
+  const road = 2.6; // half road width
+  let buildings = '', ground = '';
+  const fields: string[] = ['', '', ''];
+  const rect = (x: number, y: number, w: number, h: number) => `M${f(x)} ${f(y)}h${f(w)}v${f(h)}h${f(-w)}z`;
+  for (let i = 0; i < xs.length - 1; i++) {
+    for (let j = 0; j < ys.length - 1; j++) {
+      const x0 = at(xs, i) + road, x1 = at(xs, i + 1) - road;
+      const y0 = at(ys, j) + road, y1 = at(ys, j + 1) - road;
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+      const urban = n2(cx / 120, cy / 100) + (160 - cx) / 450 > 0.2;
+      if (urban) {
+        ground += rect(x0, y0, x1 - x0, y1 - y0);
+        const nc = Math.max(1, Math.floor((x1 - x0) / (8.5 + rng() * 3)));
+        const nr = Math.max(1, Math.floor((y1 - y0) / (7.5 + rng() * 3)));
+        const lw = (x1 - x0) / nc, lh = (y1 - y0) / nr;
+        for (let a = 0; a < nc; a++) {
+          for (let b = 0; b < nr; b++) {
+            if (rng() < 0.14) continue;
+            const bw = lw - 2.4 - rng() * 2.5, bh = lh - 2.4 - rng() * 2.5;
+            buildings += rect(x0 + a * lw + (lw - bw) / 2, y0 + b * lh + (lh - bh) / 2, bw, bh);
+          }
+        }
+      } else {
+        const k = 1 + Math.floor(rng() * 3);
+        const horizontal = x1 - x0 > y1 - y0;
+        for (let s = 0; s < k; s++) {
+          const tone = Math.floor(rng() * 3);
+          const out =
+            horizontal
+              ? rect(x0 + ((x1 - x0) * s) / k + 0.8, y0 + 0.8, (x1 - x0) / k - 1.6, y1 - y0 - 1.6)
+              : rect(x0 + 0.8, y0 + ((y1 - y0) * s) / k + 0.8, x1 - x0 - 1.6, (y1 - y0) / k - 1.6);
+          fields[tone] += out;
+        }
+      }
+    }
+  }
+  const roads =
+    xs.map((x) => `M${f(x)} -5V185`).join('') + ys.map((y) => `M-5 ${f(y)}H325`).join('');
+  const lane = spline([[-10, 150], [80, 138], [170, 160], [250, 120], [330, 126]]);
+  const sw = (x: number, cls: string, text: string) =>
+    `<rect class="${cls}" x="${x}" y="167.5" width="5" height="5"/><text class="tx" x="${x + 7}" y="173">${text}</text>`;
+  return (
+    `<rect class="s0" width="${W}" height="${H}"/>` +
+    `<path class="ug" d="${ground}"/>` +
+    fields.map((d, t) => `<path class="s${t + 1}" d="${d}"/>`).join('') +
+    `<path class="rd" d="${roads}"/><path class="rd2" d="${lane}"/>` +
+    `<path class="bl" d="${buildings}"/>` +
+    FRAME +
+    label(6, 15, 'VHR · 0.5 m') +
+    `<rect class="lb" x="6" y="165.5" width="94" height="11" rx="2"/>` +
+    sw(10, 'bl', 'BLDG') + sw(40, 'rl2', 'ROAD') + sw(70, 's2', 'FIELD')
+  );
+}
+
+// Flood: terrain relief with a teal water-extent polygon and a dashed prior-extent outline.
+function flood(): string {
+  const { n2, fbm } = makeNoise(41);
+  const cy = (x: number) => 96 + 28 * Math.sin((x / W) * Math.PI * 2.1 + 0.5) + 9 * n2(x / 60, 1.3);
+  const main: Pt[] = [], mainW: number[] = [];
+  for (let x = -12; x <= 332; x += 8) {
+    main.push([x, cy(x)]);
+    mainW.push(22 + 16 * (n2(x / 52, 5.5) * 0.5 + 0.5) + n2(x / 9, 2) * 1.6);
+  }
+  const trib: Pt[] = [], tribW: number[] = [];
+  for (let k = 0; k <= 10; k++) {
+    const t = k / 10;
+    trib.push([205 - 38 * t + 10 * Math.sin(t * 5), cy(205) - 96 * t]);
+    tribW.push(14 * (1 - t * 0.7) + 2);
+  }
+  const wet = poly(ribbon(main, mainW)) + poly(ribbon(trib, tribW));
+  const prior =
+    poly(ribbon(main, mainW.map((w) => w * 0.4 + 2))) +
+    poly(ribbon(trib.slice(1), tribW.slice(1).map((w) => w * 0.35 + 1)));
+  const cell = 8;
+  const course = main.concat(trib);
+  const e = grid(40, 23, (i, j) => {
+    const px = (i + 0.5) * cell, py = (j + 0.5) * cell;
+    let dist = 1e9;
+    for (const [x, y] of course) dist = Math.min(dist, Math.hypot(x - px, y - py));
+    return 0.0042 * dist + 0.3 * fbm(px / 60, py / 60);
+  });
+  const level = quantileLevels(e.flat(), 5);
+  const lv = e.map((row) => row.map(level));
+  return (
+    `<rect class="s0" width="${W}" height="${H}"/>` +
+    raster(lv, cell, 5) +
+    `<path class="fw" d="${wet}"/><path class="pr" d="${prior}"/>` +
+    FRAME +
+    label(6, 15, 'WATER MASK · 10 m') +
+    `<rect class="lb" x="222" y="165.5" width="92" height="11" rx="2"/>` +
+    `<path class="pr" d="M226 171h10"/><text class="tx" x="239" y="173">PRIOR</text>` +
+    `<rect class="fw" x="264" y="168" width="10" height="5"/><text class="tx" x="277" y="173">EXTENT</text>`
+  );
+}
+
+// NDVI: field mosaic (BSP rectangles) rasterised to 8 px cells, red -> lime ramp.
+function ndvi(): string {
+  const { rng, n2 } = makeNoise(53);
+  type R = [number, number, number, number];
+  const split = (r: R, depth: number): R[] => {
+    const [x, y, w, h] = r;
+    if (depth >= 6 || (depth >= 3 && rng() < 0.22) || w * h < 1100) return [r];
+    const t = 0.35 + rng() * 0.3;
+    const vertical = w > h * 1.1 ? true : h > w * 1.1 ? false : rng() < 0.5;
+    return vertical
+      ? [...split([x, y, w * t, h], depth + 1), ...split([x + w * t, y, w * (1 - t), h], depth + 1)]
+      : [...split([x, y, w, h * t], depth + 1), ...split([x, y + h * t, w, h * (1 - t)], depth + 1)];
+  };
+  const fieldsR = split([0, 0, W, H], 0).map((r) => {
+    const cx = r[0] + r[2] / 2, cy = r[1] + r[3] / 2;
+    return { r, base: 0.65 * rng() + 0.35 * (n2(cx / 90, cy / 80) * 0.5 + 0.5) + 0.04 };
+  });
+  const cell = 8;
+  const lv = grid(40, 23, (i, j) => {
+    const px = (i + 0.5) * cell, py = (j + 0.5) * cell;
+    const fld = fieldsR.find(({ r }) => px >= r[0] && px < r[0] + r[2] && py >= r[1] && py < r[1] + r[3]) ?? at(fieldsR, 0);
+    const v = fld.base + 0.09 * n2(px / 14, py / 14);
+    return clamp(Math.floor(v * 7.2 - 0.1), 0, 6);
+  });
+  const bar = [0, 1, 2, 3, 4, 5, 6].map((l) => `<rect class="s${l}" x="${272 + l * 5}" y="168" width="5" height="5"/>`).join('');
+  return (
+    `<rect class="s0" width="${W}" height="${H}"/>` +
+    raster(lv, cell, 7) +
+    `<path class="fb" d="${fieldsR.map(({ r }) => `M${f(r[0])} ${f(r[1])}h${f(r[2])}v${f(r[3])}h${f(-r[2])}z`).join('')}"/>` +
+    FRAME +
+    label(6, 15, 'NDVI · 10 m') +
+    `<rect class="lb" x="262" y="165.5" width="52" height="11" rx="2"/>` +
+    `<text class="tx" x="266" y="173">0</text>${bar}<text class="tx" x="309" y="173">1</text>`
+  );
+}
+
+// Pipeline: clean source -> process -> output graph. Edges carry a CSS-only flow animation.
+function pipeline(): string {
+  const nw = 62, nh = 24;
+  const cols = { src: 14, proc: 129, out: 244 };
+  type N = { x: number; y: number; t: string; c: string };
+  const src: N[] = [
+    { x: cols.src, y: 48, t: 'STAC', c: 'ns' },
+    { x: cols.src, y: 90, t: 'REST API', c: 'ns' },
+    { x: cols.src, y: 132, t: 'S3 / GCS', c: 'ns' },
+  ];
+  const proc: N[] = [
+    { x: cols.proc, y: 69, t: 'INGEST + QA', c: 'np' },
+    { x: cols.proc, y: 111, t: 'MODEL / ETL', c: 'np' },
+  ];
+  const out: N[] = [
+    { x: cols.out, y: 48, t: 'COG TILES', c: 'no' },
+    { x: cols.out, y: 90, t: 'GEOPARQUET', c: 'no' },
+    { x: cols.out, y: 132, t: 'REST API', c: 'no' },
+  ];
+  const edge = (a: N, b: N, cls: string) => {
+    const x1 = a.x + nw, y1 = a.y, x2 = b.x - 3, y2 = b.y, m = (x1 + x2) / 2;
+    return (
+      `<path class="ed ${cls} fl" d="M${x1} ${y1}C${m} ${y1} ${m} ${y2} ${x2} ${y2}"/>` +
+      `<path class="ah ${cls}" d="M${x2 + 3} ${y2}l-5 -2.5v5z"/>`
+    );
+  };
+  const node = (n: N) =>
+    `<rect class="${n.c}" x="${n.x}" y="${n.y - nh / 2}" width="${nw}" height="${nh}" rx="3"/>` +
+    `<text class="tx hi" x="${n.x + nw / 2}" y="${n.y + 2.5}" text-anchor="middle">${n.t}</text>`;
+  // dotted background: one dashed line per row, round caps, zero-length dashes
+  let dots = '';
+  for (let y = 10; y < H; y += 20) dots += `M0 ${y}h${W}`;
+  const [s1, s2, s3] = src as [N, N, N], [p1, p2] = proc as [N, N], [o1, o2, o3] = out as [N, N, N];
+  return (
+    `<path class="dt" d="${dots}"/>` +
+    edge(s1, p1, 'e1') + edge(s2, p1, 'e1') + edge(s2, p2, 'e1') + edge(s3, p2, 'e1') +
+    edge(p1, o1, 'e2') + edge(p1, o2, 'e2') + edge(p2, o2, 'e2') + edge(p2, o3, 'e2') +
+    [...src, ...proc, ...out].map(node).join('') +
+    `<text class="tx" x="${cols.src}" y="24">SOURCE</text><text class="tx" x="${cols.proc}" y="24">PROCESS</text><text class="tx" x="${cols.out}" y="24">OUTPUT</text>` +
+    FRAME +
+    label(6, 173, 'DAG · 3 STAGES')
+  );
+}
+
+// Terrain: DEM hillshade + contours, a road/rail corridor and a neutral T0 -> T1 change outline.
+function terrain(): string {
+  const { rng, n2, fbm } = makeNoise(67);
+  const corY = (x: number) => 112 - 0.2 * x + 9 * Math.sin(x / 34 + 0.8) + 6 * n2(x / 70, 8);
+  const corridor: Pt[] = [];
+  for (let x = -20; x <= 340; x += 6) corridor.push([x, corY(x)]);
+  const z = (x: number, y: number) => {
+    let d = 1e9;
+    for (const [cx, cy] of corridor) d = Math.min(d, Math.hypot(cx - x, cy - y));
+    const ridged = (1 - Math.abs(fbm(x / 130 + 9, y / 130 + 4, 2))) ** 2;
+    return 0.55 * fbm(x / 100, y / 100, 2) + 0.45 * ridged - 0.55 * Math.exp(-(d * d) / 800);
+  };
+  // Hillshade (light from NW) on 8 px cells, quantised by rank.
+  const cell = 8;
+  const L = [-0.5, -0.5, 0.707];
+  const shade = grid(40, 23, (i, j) => {
+    const px = (i + 0.5) * cell, py = (j + 0.5) * cell;
+    const sx = ((z(px + 2 * cell, py) - z(px - 2 * cell, py)) / (4 * cell)) * 70;
+    const sy = ((z(px, py + 2 * cell) - z(px, py - 2 * cell)) / (4 * cell)) * 70;
+    return (-sx * L[0]! - sy * L[1]! + L[2]!) / Math.sqrt(1 + sx * sx + sy * sy);
+  });
+  const level = quantileLevels(shade.flat(), 5);
+  const lv = shade.map((row) => row.map(level));
+  // Contours from a coarser grid padded beyond the frame so closing edges fall outside the viewBox.
+  const cc = 16, cox = -16, coy = -16, ccols = 22, crows = 13;
+  const zs: number[] = [];
+  for (let j = 0; j < crows; j++) for (let i = 0; i < ccols; i++) zs.push(z(cox + (i + 0.5) * cc, coy + (j + 0.5) * cc));
+  const lo = Math.min(...zs), hi = Math.max(...zs);
+  const ths = Array.from({ length: 6 }, (_, k) => lo + ((hi - lo) * (k + 1)) / 7);
+  const lines = contours().size([ccols, crows]).thresholds(ths)(zs);
+  let minor = '', major = '';
+  lines.forEach((c, k) => {
+    let d = '';
+    for (const polygon of c.coordinates) {
+      for (const ring of polygon) {
+        const pts = ring.map(([gx, gy]) => [Math.round(cox + gx * cc), Math.round(coy + gy * cc)] as Pt);
+        if (pts.length < 7 || pts.every(([x, y]) => x < -2 || x > W + 2 || y < -2 || y > H + 2)) continue;
+        d += poly(pts);
+      }
+    }
+    if (k % 3 === 1) major += d; else minor += d; // every third line is an index contour
+  });
+  const line = spline(corridor.filter((_, k) => k % 3 === 0), false);
+  const side = spline([[104, corY(104)], [118, 60], [150, 22], [162, -10]]);
+  const t0 = spline(blob(206, corY(206) - 17, 34, 11, rng, 0.14), true);
+  const t1 = spline(blob(211, corY(211) - 19, 47, 17, rng, 0.14), true);
+  return (
+    `<rect class="s0" width="${W}" height="${H}"/>` +
+    raster(lv, cell, 5) +
+    `<path class="ct" d="${minor}"/><path class="ix" d="${major}"/>` +
+    `<path class="sr" d="${side}"/>` +
+    `<path class="cc" d="${line}"/><path class="cr" d="${line}"/><path class="ti" d="${line}"/>` +
+    `<path class="t1" d="${t1}"/><path class="t0" d="${t0}"/>` +
+    `<text class="tx hi sm" x="${f(206 - 34)}" y="${f(corY(206) - 32)}">T0</text><text class="tx hi sm" x="${f(211 + 40)}" y="${f(corY(211) - 38)}">T1</text>` +
+    FRAME +
+    label(6, 15, 'DEM · 30 m') +
+    label(314, 173, 'T0 → T1', 'end')
+  );
+}
+
+// Dense Catmull-Rom sample of a polyline (used where sub-ranges of one line must be re-drawn exactly).
+function sample(p: Pt[], per = 6): Pt[] {
+  const n = p.length;
+  const g = (i: number): Pt => at(p, clamp(i, 0, n - 1));
+  const out: Pt[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = g(i - 1), p1 = g(i), p2 = g(i + 1), p3 = g(i + 2);
+    for (let s = 0; s < per; s++) {
+      const t = s / per, t2 = t * t, t3 = t2 * t;
+      const c = (k: 0 | 1) =>
+        0.5 * (2 * p1[k] + (p2[k] - p0[k]) * t + (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k]) * t2 + (3 * p1[k] - p0[k] - 3 * p2[k] + p3[k]) * t3);
+      out.push([c(0), c(1)]);
+    }
+  }
+  out.push(g(n - 1));
+  return out;
+}
+
+// Elevation: DEM hillshade with a slope-class overlay, catchment outline, drainage, a dashed
+// transect (A-A') and a small elevation-profile inset.
+function elevation(): string {
+  const { fbm } = makeNoise(71);
+  const z = (x: number, y: number) => {
+    const ridged = (1 - Math.abs(fbm(x / 170 + 5, y / 170 + 2, 2))) ** 2;
+    return 0.5 * fbm(x / 140, y / 140, 2) + 0.5 * ridged;
+  };
+  const cell = 8;
+  const L = [-0.5, -0.5, 0.707];
+  const sl: number[] = [];
+  const shade = grid(40, 23, (i, j) => {
+    const px = (i + 0.5) * cell, py = (j + 0.5) * cell;
+    const sx = ((z(px + 2 * cell, py) - z(px - 2 * cell, py)) / (4 * cell)) * 45;
+    const sy = ((z(px, py + 2 * cell) - z(px, py - 2 * cell)) / (4 * cell)) * 45;
+    sl.push(Math.hypot(sx, sy));
+    return (-sx * L[0]! - sy * L[1]! + L[2]!) / Math.sqrt(1 + sx * sx + sy * sy);
+  });
+  const level = quantileLevels(shade.flat(), 5);
+  const slopeLevel = quantileLevels(sl, 4);
+  const lv = shade.map((row) => row.map(level));
+  const sk = grid(40, 23, (i, j) => {
+    const q = slopeLevel(at(sl, j * 40 + i));
+    return q === 3 ? 2 : q === 2 ? 1 : 0;
+  });
+  const rng2 = makeNoise(72).rng;
+  const catchment = spline(blob(112, 88, 84, 54, rng2, 0.14, 12), true);
+  const stream = spline([[96, 30], [108, 56], [100, 82], [118, 108], [112, 138]]);
+  // transect A -> A'
+  const A: Pt = [26, 142], B: Pt = [204, 44];
+  const prof: number[] = Array.from({ length: 36 }, (_, k) => z(A[0] + ((B[0] - A[0]) * k) / 35, A[1] + ((B[1] - A[1]) * k) / 35));
+  const lo = Math.min(...prof), hi = Math.max(...prof);
+  const py = (v: number) => 163 - ((v - lo) / (hi - lo || 1)) * 26;
+  const pts = prof.map((v, k) => [230 + (k * 76) / 35, py(v)] as Pt);
+  const line = poly(pts, false);
+  const area = poly([[230, 163] as Pt, ...pts, [306, 163] as Pt]);
+  return (
+    `<rect class="s0" width="${W}" height="${H}"/>` +
+    raster(lv, cell, 5) +
+    raster(sk, cell, 3, 0, 0, 'k') +
+    `<path class="ca" d="${catchment}"/><path class="st" d="${stream}"/>` +
+    `<path class="trc" d="M${A[0]} ${A[1]}L${B[0]} ${B[1]}"/><path class="tr" d="M${A[0]} ${A[1]}L${B[0]} ${B[1]}"/>` +
+    `<circle class="te" cx="${A[0]}" cy="${A[1]}" r="2.4"/><circle class="te" cx="${B[0]}" cy="${B[1]}" r="2.4"/>` +
+    `<text class="tx hi" x="${A[0] + 5}" y="${A[1] + 3}">A</text><text class="tx hi" x="${B[0] + 5}" y="${B[1] + 3}">A′</text>` +
+    `<rect class="ip" x="220" y="108" width="94" height="64" rx="3"/>` +
+    `<text class="tx hi" x="226" y="121">PROFILE A–A′</text>` +
+    `<path class="pg" d="M230 163h76M230 150h76M230 137h76"/><path class="pa" d="${area}"/><path class="pf" d="${line}"/>` +
+    FRAME +
+    label(6, 15, 'DEM · 30 m') +
+    `<rect class="lb" x="6" y="164.5" width="104" height="11" rx="2"/>` +
+    `<rect class="k1 kf" x="10" y="167.5" width="5" height="5"/><text class="tx" x="17" y="173">MOD</text>` +
+    `<rect class="k2 kf" x="40" y="167.5" width="5" height="5"/><text class="tx" x="47" y="173">STEEP</text>` +
+    `<path class="ca" d="M78 170h9"/><text class="tx" x="90" y="173">BASIN</text>`
+  );
+}
+
+// Cartography: a map-layout tile. Framed choropleth, legend ramp, scale bar, north arrow and an
+// indicator bar-chart panel that shares the map's class colours.
+function cartography(): string {
+  const { rng, fbm } = makeNoise(79);
+  const x0 = 8, y0 = 8, mw = 200, mh = 164, nx = 6, ny = 5;
+  const gx = mw / nx, gy = mh / ny;
+  const P = grid(nx + 1, ny + 1, (i, j) => {
+    const edgeX = i === 0 || i === nx, edgeY = j === 0 || j === ny;
+    return [x0 + i * gx + (edgeX ? 0 : (rng() - 0.5) * 16), y0 + j * gy + (edgeY ? 0 : (rng() - 0.5) * 14)] as Pt;
+  });
+  const groups: string[] = Array.from({ length: 5 }, () => '');
+  const add = (p: Pt[]) => {
+    const cx = p.reduce((s, q) => s + q[0], 0) / p.length;
+    const cy = p.reduce((s, q) => s + q[1], 0) / p.length;
+    groups[clamp(Math.floor(((fbm(cx / 110, cy / 90) + 0.65) / 1.3) * 5), 0, 4)] += poly(p);
+  };
+  for (let j = 0; j < ny; j++) {
+    for (let i = 0; i < nx; i++) {
+      const a = at(at(P, j), i), b = at(at(P, j), i + 1), c = at(at(P, j + 1), i + 1), d = at(at(P, j + 1), i);
+      if (rng() < 0.55) add([a, b, c, d]);
+      else if (rng() < 0.5) { add([a, b, c]); add([a, c, d]); } else { add([a, b, d]); add([b, c, d]); }
+    }
+  }
+  const vals = Array.from({ length: 6 }, () => 0.22 + rng() * 0.78);
+  const mean = vals.reduce((s, v) => s + v, 0) / vals.length;
+  const bars = vals
+    .map((v, k) => {
+      const y = 46 + k * 20, w = v * 62;
+      return `<text class="tx" x="224" y="${y + 7.5}">Z${k + 1}</text><rect class="q${Math.min(4, Math.floor(v * 5))}" x="240" y="${y}" width="${f(w)}" height="9"/>`;
+    })
+    .join('');
+  const sw = Array.from({ length: 5 }, (_, l) => `<rect class="q${l}" x="${34 + l * 8}" y="155" width="8" height="8"/>`).join('');
+  return (
+    `<rect class="s0" width="${W}" height="${H}"/>` +
+    `<g stroke-linejoin="round">${groups.map((d, l) => (d ? `<path class="q${l}" d="${d}"/>` : '')).join('')}</g>` +
+    `<rect class="mf" x="${x0}" y="${y0}" width="${mw}" height="${mh}"/>` +
+    `<rect class="lb" x="180" y="14" width="22" height="26" rx="3"/><path class="na" d="M191 18l5 14l-5 -4l-5 4z"/><text class="tx hi" x="191" y="38" text-anchor="middle">N</text>` +
+    `<rect class="lb" x="12" y="152.5" width="90" height="15" rx="2"/><text class="tx" x="16" y="162">LOW</text>${sw}<text class="tx" x="76" y="162">HIGH</text>` +
+    `<rect class="lb" x="138" y="152.5" width="68" height="15" rx="2"/><rect class="sb1" x="144" y="155" width="18" height="3"/><rect class="sb2" x="162" y="155" width="18" height="3"/>` +
+    `<text class="tx" x="144" y="165">0</text><text class="tx" x="162" y="165">5</text><text class="tx" x="180" y="165">10 km</text>` +
+    `<rect class="pn" x="216" y="8" width="96" height="164" rx="3"/>` +
+    `<text class="tx hi" x="224" y="24">INDICATOR</text><text class="tx" x="224" y="34">BY ZONE</text>` +
+    `<path class="ax" d="M240 42V170"/>${bars}<path class="mn" d="M${f(240 + mean * 62)} 42V168"/>` +
+    FRAME +
+    label(14, 22, 'CHOROPLETH')
+  );
+}
+
+// Urban: street-grid blocks coloured by growth period (concentric), LULC-transition patches and a
+// dashed planned boundary.
+function urban(): string {
+  const { rng, n2 } = makeNoise(89);
+  const xs: number[] = [], ys: number[] = [];
+  for (let x = 4; ; x += 24 + rng() * 12) { xs.push(x); if (x > W + 4) break; }
+  for (let y = 2; ; y += 18 + rng() * 10) { ys.push(y); if (y > H + 4) break; }
+  const cx0 = 128, cy0 = 92;
+  const g: string[] = ['', '', '', ''];
+  let cuts = '';
+  const rect = (x: number, y: number, w: number, h: number) => `M${f(x)} ${f(y)}h${f(w)}v${f(h)}h${f(-w)}z`;
+  for (let i = 0; i < xs.length - 1; i++) {
+    for (let j = 0; j < ys.length - 1; j++) {
+      const bx = at(xs, i) + 1.9, by = at(ys, j) + 1.9, bw = at(xs, i + 1) - at(xs, i) - 3.8, bh = at(ys, j + 1) - at(ys, j) - 3.8;
+      const d = Math.hypot((bx + bw / 2 - cx0) / 150, (by + bh / 2 - cy0) / 95) + 0.14 * n2((bx + bw / 2) / 60, (by + bh / 2) / 50);
+      const r = rng();
+      if (d >= 1.05 || (d > 0.82 && r < 0.3)) continue;
+      const k = d < 0.3 ? 0 : d < 0.55 ? 1 : d < 0.8 ? 2 : 3;
+      g[k] += rect(bx, by, bw, bh);
+      if (r > 0.45) cuts += bw > bh ? `M${f(bx + bw / 2)} ${f(by)}v${f(bh)}` : `M${f(bx)} ${f(by + bh / 2)}h${f(bw)}`;
+    }
+  }
+  const ring = spline(blob(cx0, cy0, 72, 46, rng, 0.05, 12), true);
+  const patches = ([[246, 54, 15, 9], [58, 146, 17, 8], [226, 142, 14, 8]] as const)
+    .map(([x, y, rx, ry]) => spline(blob(x, y, rx, ry, rng, 0.18, 9), true))
+    .join('');
+  const plan = spline(blob(cx0 + 2, cy0, 128, 80, rng, 0.05, 16), true);
+  const sw = (x: number, cls: string, t: string) => `<rect class="${cls}" x="${x}" y="167.5" width="5" height="5"/><text class="tx" x="${x + 7}" y="173">${t}</text>`;
+  return (
+    `<rect class="s0" width="${W}" height="${H}"/>` +
+    g.map((d, k) => `<path class="g${k + 1}" d="${d}"/>`).join('') +
+    `<path class="sp" d="${cuts}"/><path class="rg" d="${ring}"/>` +
+    `<path class="tp" d="${patches}"/><path class="pb" d="${plan}"/>` +
+    FRAME +
+    label(6, 15, 'BUILT-UP · 10 m') +
+    `<rect class="lb" x="6" y="164.5" width="108" height="11" rx="2"/>` +
+    sw(10, 'g1', 'T1') + sw(34, 'g2', 'T2') + sw(58, 'g3', 'T3') + sw(82, 'g4', 'T4') +
+    `<rect class="lb" x="188" y="164.5" width="126" height="11" rx="2"/>` +
+    `<rect class="tp" x="192" y="167.5" width="5" height="5"/><text class="tx" x="199" y="173">LULC Δ</text>` +
+    `<path class="pb" d="M236 170h11"/><text class="tx" x="250" y="173">PLANNED</text>`
+  );
+}
+
+// Infrastructure: road / rail / pipeline-style linear assets over terrain, translucent hazard
+// exposure polygons and highlighted segments of the assets that cross them.
+function infrastructure(): string {
+  const { rng, n2, fbm } = makeNoise(83);
+  const z = (x: number, y: number) => {
+    const ridged = (1 - Math.abs(fbm(x / 125 + 3, y / 125 + 7, 2))) ** 2;
+    return 0.55 * fbm(x / 100, y / 100, 2) + 0.45 * ridged;
+  };
+  const cell = 8;
+  const L = [-0.5, -0.5, 0.707];
+  const shade = grid(40, 23, (i, j) => {
+    const px = (i + 0.5) * cell, py = (j + 0.5) * cell;
+    const sx = ((z(px + 2 * cell, py) - z(px - 2 * cell, py)) / (4 * cell)) * 70;
+    const sy = ((z(px, py + 2 * cell) - z(px, py - 2 * cell)) / (4 * cell)) * 70;
+    return (-sx * L[0]! - sy * L[1]! + L[2]!) / Math.sqrt(1 + sx * sx + sy * sy);
+  });
+  const level = quantileLevels(shade.flat(), 5);
+  const lv = shade.map((row) => row.map(level));
+  const j = (k: number) => n2(k, 4.2) * 4;
+  const road = sample([[-10, 128 + j(0)], [50, 110 + j(1)], [110, 118 + j(2)], [170, 84 + j(3)], [230, 70 + j(4)], [290, 46 + j(5)], [330, 40]]);
+  const rail = sample([[-10, 40 + j(6)], [60, 58 + j(7)], [120, 64 + j(8)], [180, 100 + j(9)], [240, 126 + j(10)], [330, 140]]);
+  const pipe = sample([[40, -10], [72, 50 + j(11)], [100, 100 + j(12)], [96, 150 + j(13)], [110, 190]]);
+  const open = (a: Pt[]) => poly(a, false);
+  const zoneAt = (a: Pt[], idx: number, rx: number, ry: number) => spline(blob(at(a, idx)[0], at(a, idx)[1], rx, ry, rng, 0.2, 10), true);
+  const zones1 = zoneAt(road, 21, 32, 22) + zoneAt(pipe, 14, 22, 26);
+  const zones2 = zoneAt(rail, 27, 30, 20) + zoneAt(road, 26, 18, 12);
+  const seg = (a: Pt[], i0: number, i1: number) => open(a.slice(i0, i1));
+  const hl = seg(road, 16, 31) + seg(rail, 21, 33) + seg(pipe, 9, 19);
+  const nodes = [4, 10, 16, 22, 28].map((k) => `<circle cx="${f(at(road, k * 1)[0])}" cy="${f(at(road, k * 1)[1])}" r="1.8"/>`).join('');
+  return (
+    `<rect class="s0" width="${W}" height="${H}"/>` +
+    raster(lv, cell, 5) +
+    `<path class="h1" d="${zones1}"/><path class="h2" d="${zones2}"/>` +
+    `<path class="pl" d="${open(pipe)}"/>` +
+    `<path class="ac" d="${open(road)}${open(rail)}"/><path class="ro" d="${open(road)}"/><path class="ra" d="${open(rail)}"/>` +
+    `<path class="hc" d="${hl}"/><path class="hi2" d="${hl}"/>` +
+    `<g class="nd">${nodes}</g>` +
+    FRAME +
+    label(6, 15, 'ASSETS · HAZARD') +
+    `<rect class="lb" x="6" y="164.5" width="106" height="11" rx="2"/>` +
+    `<path class="ro" d="M10 170h8"/><text class="tx" x="21" y="173">ROAD</text>` +
+    `<path class="ra" d="M46 170h8"/><text class="tx" x="57" y="173">RAIL</text>` +
+    `<path class="pl" d="M80 170h8"/><text class="tx" x="91" y="173">PIPE</text>` +
+    `<rect class="lb" x="212" y="164.5" width="102" height="11" rx="2"/>` +
+    `<rect class="h2" x="216" y="167.5" width="5" height="5"/><text class="tx" x="224" y="173">HAZARD</text>` +
+    `<path class="hi2" d="M256 170h8"/><text class="tx" x="267" y="173">EXPOSED</text>`
+  );
+}
+
+const BUILDERS: Record<VisualKey, () => string> = {
+  sar, gis, segmentation, flood, ndvi, pipeline, terrain, elevation, cartography, urban, infrastructure,
+};
+const markup = BUILDERS[kind]();
+---
+
+<svg
+  class:list={['tsv', `tsv-${kind}`, className]}
+  viewBox="0 0 320 180"
+  width="100%"
+  preserveAspectRatio="xMidYMid slice"
+  aria-hidden="true"
+  focusable="false"
+  set:html={markup}
+/>
+
+<style is:global>
+  :where(.tsv) { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; }
+  .tsv {
+    --tsv-bg: var(--bg, #0a0f14);
+    --tsv-card: var(--bg-card, #17202a);
+    --tsv-line: var(--line-strong, #34465c);
+    --tsv-text: var(--text, #e6edf3);
+    --tsv-mut: var(--text-muted, #9aa7b4);
+    --tsv-teal: var(--teal, #2dd4bf);
+    --tsv-lime: var(--lime, #c5f23a);
+    --tsv-amber: var(--amber, #e0a63a);
+    overflow: hidden;
+  }
+
+  /* shared chrome */
+  .tsv .bd { fill: none; stroke: var(--tsv-line); stroke-width: 1; }
+  .tsv .tk { fill: none; stroke: var(--tsv-line); stroke-width: 0.8; }
+  .tsv .lb { fill: var(--tsv-bg); fill-opacity: 0.74; }
+  .tsv .tx { font-family: var(--font-mono, ui-monospace, monospace); font-size: 7px; font-weight: 500; letter-spacing: 0.04em; fill: var(--tsv-mut); }
+  .tsv .tx.hi { fill: var(--tsv-text); }
+  .tsv .tx.sm { font-size: 6px; }
+
+  /* gis */
+  .tsv-gis .s0, .tsv-gis .s1, .tsv-gis .s2, .tsv-gis .s3, .tsv-gis .s4 { stroke: var(--tsv-bg); stroke-width: 0.9; stroke-opacity: 0.8; }
+  .tsv-gis .gr { fill: none; stroke: var(--tsv-text); stroke-opacity: 0.07; stroke-width: 0.5; }
+  .tsv-gis .rc { fill: none; stroke: var(--tsv-bg); stroke-width: 3.6; stroke-linecap: round; }
+  .tsv-gis .rl { fill: none; stroke: var(--tsv-text); stroke-opacity: 0.7; stroke-width: 1.3; stroke-linecap: round; }
+  .tsv-gis .sa { fill: none; stroke: var(--tsv-lime); stroke-width: 1; stroke-dasharray: 4 3; }
+  .tsv-gis .sy circle { fill: var(--tsv-bg); fill-opacity: 0.35; stroke: var(--tsv-text); stroke-width: 0.9; }
+
+  /* segmentation */
+  .tsv-segmentation .ug { fill: #1a2128; fill: color-mix(in srgb, var(--tsv-mut) 11%, var(--tsv-bg)); }
+  .tsv-segmentation .rd { fill: none; stroke-width: 5.2; stroke: #1f8277; stroke: color-mix(in srgb, var(--tsv-teal) 58%, var(--tsv-bg)); }
+  .tsv-segmentation .rd2 { fill: none; stroke-width: 4; stroke-linecap: round; stroke: #1f8277; stroke: color-mix(in srgb, var(--tsv-teal) 58%, var(--tsv-bg)); }
+  .tsv-segmentation .bl { fill: #98bd2f; fill: color-mix(in srgb, var(--tsv-lime) 74%, var(--tsv-bg)); }
+  .tsv-segmentation .rl2 { fill: #1f8277; fill: color-mix(in srgb, var(--tsv-teal) 58%, var(--tsv-bg)); }
+
+  /* flood */
+  .tsv-flood .fw { fill: var(--tsv-teal); fill-opacity: 0.6; }
+  .tsv-flood .pr { fill: none; stroke: var(--tsv-text); stroke-width: 0.9; stroke-dasharray: 3 2.5; stroke-opacity: 0.85; stroke-linejoin: round; }
+
+  /* ndvi */
+  .tsv-ndvi .fb { fill: none; stroke: var(--tsv-bg); stroke-opacity: 0.55; stroke-width: 1.2; }
+
+  /* pipeline */
+  .tsv-pipeline .dt { fill: none; stroke: var(--tsv-line); stroke-opacity: 0.7; stroke-width: 1.2; stroke-linecap: round; stroke-dasharray: 0 20; stroke-dashoffset: -10; }
+  .tsv-pipeline .ns, .tsv-pipeline .np, .tsv-pipeline .no { fill: var(--tsv-card); stroke-width: 1; }
+  .tsv-pipeline .ns { stroke: var(--tsv-teal); stroke-opacity: 0.65; }
+  .tsv-pipeline .np { stroke: var(--tsv-mut); stroke-opacity: 0.7; }
+  .tsv-pipeline .no { stroke: var(--tsv-lime); stroke-opacity: 0.8; }
+  .tsv-pipeline .ed { fill: none; stroke-width: 1.1; stroke-dasharray: 4 3; }
+  .tsv-pipeline .e1 { stroke: var(--tsv-teal); stroke-opacity: 0.7; }
+  .tsv-pipeline .e2 { stroke: var(--tsv-lime); stroke-opacity: 0.75; }
+  .tsv-pipeline .ah { stroke: none; }
+  .tsv-pipeline .ah.e1 { fill: var(--tsv-teal); fill-opacity: 0.85; }
+  .tsv-pipeline .ah.e2 { fill: var(--tsv-lime); fill-opacity: 0.9; }
+  @media (prefers-reduced-motion: no-preference) {
+    .tsv-pipeline .fl { animation: tsv-flow 1.8s linear infinite; }
+  }
+  @keyframes tsv-flow { to { stroke-dashoffset: -14; } }
+
+  /* terrain */
+  .tsv-terrain .ct { fill: none; stroke: var(--tsv-text); stroke-opacity: 0.22; stroke-width: 0.5; stroke-linejoin: round; }
+  .tsv-terrain .ix { fill: none; stroke: var(--tsv-text); stroke-opacity: 0.42; stroke-width: 0.8; stroke-linejoin: round; }
+  .tsv-terrain .sr { fill: none; stroke: var(--tsv-mut); stroke-opacity: 0.7; stroke-width: 1; stroke-linecap: round; }
+  .tsv-terrain .cc { fill: none; stroke: var(--tsv-bg); stroke-opacity: 0.85; stroke-width: 4.6; stroke-linecap: round; stroke-linejoin: round; }
+  .tsv-terrain .cr { fill: none; stroke: var(--tsv-text); stroke-opacity: 0.9; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+  .tsv-terrain .ti { fill: none; stroke: var(--tsv-mut); stroke-width: 4; stroke-dasharray: 0.9 3.1; stroke-opacity: 0.75; }
+  .tsv-terrain .t0 { fill: none; stroke: var(--tsv-text); stroke-width: 1; stroke-dasharray: 3 2.5; stroke-opacity: 0.9; }
+  .tsv-terrain .t1 { fill: var(--tsv-lime); fill-opacity: 0.12; stroke: var(--tsv-lime); stroke-width: 1.3; }
+
+  /* ramps (generated: hex fallback, then color-mix() that follows the design tokens) */
+  .tsv-sar .s0{stroke:#0c191d;fill:#0c191d;stroke:color-mix(in srgb,var(--tsv-teal) 5%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-teal) 5%,var(--tsv-bg))}
+  .tsv-sar .s1{stroke:#0e2729;fill:#0e2729;stroke:color-mix(in srgb,var(--tsv-teal) 12%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-teal) 12%,var(--tsv-bg))}
+  .tsv-sar .s2{stroke:#123e3d;fill:#123e3d;stroke:color-mix(in srgb,var(--tsv-teal) 24%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-teal) 24%,var(--tsv-bg))}
+  .tsv-sar .s3{stroke:#19625c;fill:#19625c;stroke:color-mix(in srgb,var(--tsv-teal) 42%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-teal) 42%,var(--tsv-bg))}
+  .tsv-sar .s4{stroke:#229588;fill:#229588;stroke:color-mix(in srgb,var(--tsv-teal) 68%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-teal) 68%,var(--tsv-bg))}
+  .tsv-sar .s5{stroke:#80dfd6;fill:#80dfd6;stroke:color-mix(in srgb,var(--tsv-teal) 55%,var(--tsv-text));fill:color-mix(in srgb,var(--tsv-teal) 55%,var(--tsv-text))}
+  .tsv-flood .s0{stroke:#11171c;fill:#11171c;stroke:color-mix(in srgb,var(--tsv-mut) 5%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-mut) 5%,var(--tsv-bg))}
+  .tsv-flood .s1{stroke:#171d22;fill:#171d22;stroke:color-mix(in srgb,var(--tsv-mut) 9%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-mut) 9%,var(--tsv-bg))}
+  .tsv-flood .s2{stroke:#20262c;fill:#20262c;stroke:color-mix(in srgb,var(--tsv-mut) 15%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-mut) 15%,var(--tsv-bg))}
+  .tsv-flood .s3{stroke:#2b3239;fill:#2b3239;stroke:color-mix(in srgb,var(--tsv-mut) 23%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-mut) 23%,var(--tsv-bg))}
+  .tsv-flood .s4{stroke:#3a4149;fill:#3a4149;stroke:color-mix(in srgb,var(--tsv-mut) 33%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-mut) 33%,var(--tsv-bg))}
+  .tsv-terrain .s0{stroke:#10151a;fill:#10151a;stroke:color-mix(in srgb,var(--tsv-mut) 4%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-mut) 4%,var(--tsv-bg))}
+  .tsv-terrain .s1{stroke:#181e24;fill:#181e24;stroke:color-mix(in srgb,var(--tsv-mut) 10%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-mut) 10%,var(--tsv-bg))}
+  .tsv-terrain .s2{stroke:#252c32;fill:#252c32;stroke:color-mix(in srgb,var(--tsv-mut) 19%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-mut) 19%,var(--tsv-bg))}
+  .tsv-terrain .s3{stroke:#373e46;fill:#373e46;stroke:color-mix(in srgb,var(--tsv-mut) 31%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-mut) 31%,var(--tsv-bg))}
+  .tsv-terrain .s4{stroke:#4c555e;fill:#4c555e;stroke:color-mix(in srgb,var(--tsv-mut) 46%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-mut) 46%,var(--tsv-bg))}
+  .tsv-ndvi .s0{stroke:#581d1c;fill:#581d1c;stroke:color-mix(in srgb,#7a2320 70%,var(--tsv-bg));fill:color-mix(in srgb,#7a2320 70%,var(--tsv-bg))}
+  .tsv-ndvi .s1{stroke:#792d22;fill:#792d22;stroke:color-mix(in srgb,#a93a28 70%,var(--tsv-bg));fill:color-mix(in srgb,#a93a28 70%,var(--tsv-bg))}
+  .tsv-ndvi .s2{stroke:#954823;fill:#954823;stroke:color-mix(in srgb,#d0602a 70%,var(--tsv-bg));fill:color-mix(in srgb,#d0602a 70%,var(--tsv-bg))}
+  .tsv-ndvi .s3{stroke:#a06528;fill:#a06528;stroke:color-mix(in srgb,#e08a30 70%,var(--tsv-bg));fill:color-mix(in srgb,#e08a30 70%,var(--tsv-bg))}
+  .tsv-ndvi .s4{stroke:#a6852f;fill:#a6852f;stroke:color-mix(in srgb,#e9b83a 70%,var(--tsv-bg));fill:color-mix(in srgb,#e9b83a 70%,var(--tsv-bg))}
+  .tsv-ndvi .s5{stroke:#9d9f30;fill:#9d9f30;stroke:color-mix(in srgb,#dcdc3c 70%,var(--tsv-bg));fill:color-mix(in srgb,#dcdc3c 70%,var(--tsv-bg))}
+  .tsv-ndvi .s6{stroke:#a7ce34;fill:#a7ce34;stroke:color-mix(in srgb,var(--tsv-lime) 84%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-lime) 84%,var(--tsv-bg))}
+  .tsv-gis .s0{fill:#0e2729;fill:color-mix(in srgb,var(--tsv-teal) 12%,var(--tsv-bg))}
+  .tsv-gis .s1{fill:#144644;fill:color-mix(in srgb,var(--tsv-teal) 28%,var(--tsv-bg))}
+  .tsv-gis .s2{fill:#1c726a;fill:color-mix(in srgb,var(--tsv-teal) 50%,var(--tsv-bg))}
+  .tsv-gis .s3{fill:#5ab46b;fill:color-mix(in srgb,color-mix(in srgb,var(--tsv-lime) 45%,var(--tsv-teal)) 78%,var(--tsv-bg))}
+  .tsv-gis .s4{fill:#a3c933;fill:color-mix(in srgb,var(--tsv-lime) 82%,var(--tsv-bg))}
+  .tsv-segmentation .s0{stroke:#10151a;fill:#10151a;stroke:color-mix(in srgb,var(--tsv-mut) 4%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-mut) 4%,var(--tsv-bg))}
+  .tsv-segmentation .s1{stroke:#3d331d;fill:#3d331d;stroke:color-mix(in srgb,var(--tsv-amber) 24%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-amber) 24%,var(--tsv-bg))}
+  .tsv-segmentation .s2{stroke:#574522;fill:#574522;stroke:color-mix(in srgb,var(--tsv-amber) 36%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-amber) 36%,var(--tsv-bg))}
+  .tsv-segmentation .s3{stroke:#755b27;fill:#755b27;stroke:color-mix(in srgb,var(--tsv-amber) 50%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-amber) 50%,var(--tsv-bg))}
+
+  /* elevation */
+  .tsv-elevation .k1 { stroke: var(--tsv-teal); stroke-opacity: 0.16; }
+  .tsv-elevation .k2 { stroke: var(--tsv-amber); stroke-opacity: 0.3; }
+  .tsv-elevation .kf { stroke: none; fill-opacity: 0.85; }
+  .tsv-elevation .k1.kf { fill: var(--tsv-teal); }
+  .tsv-elevation .k2.kf { fill: var(--tsv-amber); }
+  .tsv-elevation .ca { fill: none; stroke: var(--tsv-lime); stroke-width: 1; stroke-dasharray: 4 3; stroke-linejoin: round; }
+  .tsv-elevation .st { fill: none; stroke: var(--tsv-teal); stroke-width: 1; stroke-linecap: round; stroke-opacity: 0.9; }
+  .tsv-elevation .trc { fill: none; stroke: var(--tsv-bg); stroke-opacity: 0.85; stroke-width: 3.4; stroke-linecap: round; }
+  .tsv-elevation .tr { fill: none; stroke: var(--tsv-text); stroke-width: 1.1; stroke-dasharray: 4 2.5; }
+  .tsv-elevation .te { fill: var(--tsv-bg); stroke: var(--tsv-text); stroke-width: 1; }
+  .tsv-elevation .ip { fill: var(--tsv-card); fill-opacity: 0.94; stroke: var(--tsv-line); stroke-width: 1; }
+  .tsv-elevation .pg { fill: none; stroke: var(--tsv-line); stroke-width: 0.6; stroke-opacity: 0.8; }
+  .tsv-elevation .pa { fill: var(--tsv-teal); fill-opacity: 0.22; stroke: none; }
+  .tsv-elevation .pf { fill: none; stroke: var(--tsv-lime); stroke-width: 1.2; stroke-linejoin: round; }
+
+  /* cartography */
+  .tsv-cartography .q0, .tsv-cartography .q1, .tsv-cartography .q2, .tsv-cartography .q3, .tsv-cartography .q4 { stroke: var(--tsv-bg); stroke-width: 0.9; stroke-opacity: 0.8; }
+  .tsv-cartography .mf { fill: none; stroke: var(--tsv-text); stroke-opacity: 0.55; stroke-width: 1; }
+  .tsv-cartography .na { fill: var(--tsv-text); }
+  .tsv-cartography .sb1 { fill: var(--tsv-text); }
+  .tsv-cartography .sb2 { fill: none; stroke: var(--tsv-text); stroke-width: 0.8; }
+  .tsv-cartography .pn { fill: var(--tsv-card); fill-opacity: 0.94; stroke: var(--tsv-line); stroke-width: 1; }
+  .tsv-cartography .ax { fill: none; stroke: var(--tsv-mut); stroke-opacity: 0.7; stroke-width: 0.8; }
+  .tsv-cartography .mn { fill: none; stroke: var(--tsv-text); stroke-width: 0.9; stroke-dasharray: 3 2.5; }
+
+  /* urban */
+  .tsv-urban .g1 { fill: #3a4149; fill: color-mix(in srgb, var(--tsv-mut) 33%, var(--tsv-bg)); }
+  .tsv-urban .g2 { fill: #19625c; fill: color-mix(in srgb, var(--tsv-teal) 42%, var(--tsv-bg)); }
+  .tsv-urban .g3 { fill: #4f9a62; fill: color-mix(in srgb, color-mix(in srgb, var(--tsv-lime) 45%, var(--tsv-teal)) 70%, var(--tsv-bg)); }
+  .tsv-urban .g4 { fill: #a3c933; fill: color-mix(in srgb, var(--tsv-lime) 82%, var(--tsv-bg)); }
+  .tsv-urban .sp { fill: none; stroke: var(--tsv-bg); stroke-width: 0.9; stroke-opacity: 0.8; }
+  .tsv-urban .rg { fill: none; stroke: var(--tsv-text); stroke-opacity: 0.4; stroke-width: 1.2; }
+  .tsv-urban .tp { fill: var(--tsv-amber); fill-opacity: 0.5; stroke: var(--tsv-amber); stroke-width: 1; stroke-linejoin: round; }
+  .tsv-urban .pb { fill: none; stroke: var(--tsv-text); stroke-width: 1; stroke-dasharray: 4 3; stroke-linejoin: round; }
+
+  /* infrastructure */
+  .tsv-infrastructure .h1 { fill: var(--tsv-amber); fill-opacity: 0.22; stroke: var(--tsv-amber); stroke-opacity: 0.7; stroke-width: 0.8; stroke-linejoin: round; }
+  .tsv-infrastructure .h2 { fill: #d0602a; fill-opacity: 0.34; stroke: #d0602a; stroke-opacity: 0.85; stroke-width: 0.8; stroke-linejoin: round; }
+  .tsv-infrastructure .pl { fill: none; stroke: var(--tsv-amber); stroke-width: 1.1; stroke-dasharray: 5 2.5; stroke-opacity: 0.95; }
+  .tsv-infrastructure .ac { fill: none; stroke: var(--tsv-bg); stroke-opacity: 0.85; stroke-width: 4.2; stroke-linecap: round; stroke-linejoin: round; }
+  .tsv-infrastructure .ro { fill: none; stroke: var(--tsv-text); stroke-opacity: 0.9; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+  .tsv-infrastructure .ra { fill: none; stroke: var(--tsv-mut); stroke-width: 3.2; stroke-dasharray: 0.9 3.1; stroke-opacity: 0.9; }
+  .tsv-infrastructure .hc { fill: none; stroke: var(--tsv-bg); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+  .tsv-infrastructure .hi2 { fill: none; stroke: var(--tsv-lime); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  .tsv-infrastructure .nd circle { fill: var(--tsv-bg); stroke: var(--tsv-text); stroke-width: 0.9; }
+  /* hillshade ramp shared with terrain */
+  .tsv-elevation .s0{stroke:#10151a;fill:#10151a;stroke:color-mix(in srgb,var(--tsv-mut) 4%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-mut) 4%,var(--tsv-bg))}
+  .tsv-elevation .s1{stroke:#181e24;fill:#181e24;stroke:color-mix(in srgb,var(--tsv-mut) 10%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-mut) 10%,var(--tsv-bg))}
+  .tsv-elevation .s2{stroke:#252c32;fill:#252c32;stroke:color-mix(in srgb,var(--tsv-mut) 19%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-mut) 19%,var(--tsv-bg))}
+  .tsv-elevation .s3{stroke:#373e46;fill:#373e46;stroke:color-mix(in srgb,var(--tsv-mut) 31%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-mut) 31%,var(--tsv-bg))}
+  .tsv-elevation .s4{stroke:#4c555e;fill:#4c555e;stroke:color-mix(in srgb,var(--tsv-mut) 46%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-mut) 46%,var(--tsv-bg))}
+  .tsv-infrastructure .s0{stroke:#10151a;fill:#10151a;stroke:color-mix(in srgb,var(--tsv-mut) 4%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-mut) 4%,var(--tsv-bg))}
+  .tsv-infrastructure .s1{stroke:#181e24;fill:#181e24;stroke:color-mix(in srgb,var(--tsv-mut) 10%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-mut) 10%,var(--tsv-bg))}
+  .tsv-infrastructure .s2{stroke:#252c32;fill:#252c32;stroke:color-mix(in srgb,var(--tsv-mut) 19%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-mut) 19%,var(--tsv-bg))}
+  .tsv-infrastructure .s3{stroke:#373e46;fill:#373e46;stroke:color-mix(in srgb,var(--tsv-mut) 31%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-mut) 31%,var(--tsv-bg))}
+  .tsv-infrastructure .s4{stroke:#4c555e;fill:#4c555e;stroke:color-mix(in srgb,var(--tsv-mut) 46%,var(--tsv-bg));fill:color-mix(in srgb,var(--tsv-mut) 46%,var(--tsv-bg))}
+  .tsv-urban .s0{fill:#10151a;fill:color-mix(in srgb,var(--tsv-mut) 4%,var(--tsv-bg))}
+  .tsv-cartography .s0{fill:#10151a;fill:color-mix(in srgb,var(--tsv-mut) 4%,var(--tsv-bg))}
+  .tsv-cartography .q0{fill:#0e2729;fill:color-mix(in srgb,var(--tsv-teal) 12%,var(--tsv-bg))}
+  .tsv-cartography .q1{fill:#144644;fill:color-mix(in srgb,var(--tsv-teal) 28%,var(--tsv-bg))}
+  .tsv-cartography .q2{fill:#1c726a;fill:color-mix(in srgb,var(--tsv-teal) 50%,var(--tsv-bg))}
+  .tsv-cartography .q3{fill:#5ab46b;fill:color-mix(in srgb,color-mix(in srgb,var(--tsv-lime) 45%,var(--tsv-teal)) 78%,var(--tsv-bg))}
+  .tsv-cartography .q4{fill:#a3c933;fill:color-mix(in srgb,var(--tsv-lime) 82%,var(--tsv-bg))}
+</style>

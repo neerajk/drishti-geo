@@ -1,0 +1,32 @@
+---
+import Base from '../layouts/Base.astro';
+import Nav from '../components/Nav.astro';
+import PageHeader from '../components/PageHeader.astro';
+import Services from '../components/Services.astro';
+import Deliverables from '../components/Deliverables.astro';
+import CtaBand from '../components/CtaBand.astro';
+import Footer from '../components/Footer.astro';
+import { SITE } from '../config/site';
+---
+<Base
+  title={`Services | ${SITE.name}`}
+  description="Six technical geospatial services: remote sensing, GIS modelling, GeoAI, terrain analysis, data engineering and cartography, plus the deliverables each project can produce."
+>
+  <Nav />
+  <main id="main">
+    <PageHeader
+      eyebrow="Services"
+      title="Services"
+      lede="Six technical capabilities, from satellite image processing to decision-support tools, that combine to address the problems on the Applications page."
+    />
+    <Services />
+    <Deliverables />
+    <CtaBand
+      heading="Have a question the data might answer?"
+      text="Tell us what you are trying to decide and we will say honestly whether satellite and spatial data can help."
+      primary={{ label: 'Discuss a Project', href: '/contact/' }}
+      secondary={{ label: 'See applications', href: '/applications/' }}
+    />
+  </main>
+  <Footer />
+</Base>
