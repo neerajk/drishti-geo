@@ -144,7 +144,7 @@ The service and application tiles are generated inline SVGs (`src/components/Vis
 1. Get a Sentinel-2 true-colour or false-colour crop from the Copernicus Browser (<https://browser.dataspace.copernicus.eu>) or Sentinel Hub EO Browser. Sentinel data is free and open under the Copernicus licence, but attribution is required, for example "Contains modified Copernicus Sentinel data [year]".
 2. Export a 16:9 crop (about 1280x720), compress it (WebP or AVIF, under about 150 KB), and put it in `src/assets/visuals/`.
 3. Import it with `astro:assets` (`import img from '../assets/visuals/flood.jpg'`, then `<Image src={img} alt="..." />`) in place of `<Visual />` for that card, and give it meaningful alt text.
-4. Add the attribution line to the footer or next to the image, and update the "Illustrative graphics generated for this site" text in `src/components/Footer.astro`.
+4. Add the attribution line to the footer or next to the image.
 
 Use only imagery you are licensed to show, and keep any "illustrative" label unless the image is from a real, named project you are allowed to describe.
 
