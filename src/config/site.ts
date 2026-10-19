@@ -5,7 +5,7 @@ export const SITE = {
   tagline: 'Geospatial intelligence from orbit to decision',
   description:
     'Remote sensing, GIS and GeoAI consultancy. We turn satellite imagery and spatial data into decision-ready information for public and private organisations.',
-  url: 'https://drishtigeo.example', // PLACEHOLDER: production URL
+  url: 'https://drishti-geo.geodrishti47.workers.dev', // update when a custom domain is added
   email: 'geodrishti47@gmail.com',
   emailSubject: 'Project enquiry',
   // Web3Forms access key. Empty string => form is not rendered (honest fallback).
